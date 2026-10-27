@@ -43,7 +43,7 @@ cd docs && python -m http.server 8000   # open http://localhost:8000
 
 ## Publish
 
-Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main**, folder **/docs**.
+Settings → Pages → Build and deployment → Source: **GitHub Actions** (the workflow in `.github/workflows/main.yml` publishes `docs/` on every push to `main`). "Deploy from a branch" with **main** and **/docs** also works; with **/(root)** the root `index.html` redirects to `docs/`.
 
 ## Structure
 
