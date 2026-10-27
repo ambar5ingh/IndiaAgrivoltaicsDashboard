@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>India Agrivoltaics Dashboard</title>
+<meta name="description" content="District-level agrivoltaics screening for all of India: Köppen-Geiger climate class, solar resource, cropland, GCR, LER, scenarios and design levers.">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+<script src="vendor/leaflet/leaflet.js"></script>
+</head>
+<body>
+<div id="loading" class="loading">
+  <img src="assets/mark.svg" alt="" class="brand-mark">
+  <div class="loading-title">India Agrivoltaics Dashboard</div>
+  <div class="load-track"><div id="load-bar"></div></div>
+  <div id="load-text">Loading district data…</div>
+</div>
+
+<div class="bg-grid"></div>
+<div class="bg-orb orb1"></div>
+<div class="bg-orb orb2"></div>
+
+<header class="site-header">
+  <a href="#/dashboard" class="brand" aria-label="India Agrivoltaics Dashboard home">
+    <img src="assets/mark.svg" alt="" class="brand-mark">
+    <span class="brand-text"><b>AgriPV India</b><span>District agrivoltaics atlas</span></span>
+  </a>
+  <nav class="main-nav" aria-label="Pages">
+    <a href="#/dashboard" data-page="dashboard">Dashboard</a>
+    <a href="#/koppen" data-page="koppen">Köppen climate guide</a>
+    <a href="#/method" data-page="method">Methodology</a>
+    <a href="#/sources" data-page="sources">Data &amp; sources</a>
+  </nav>
+  <div class="header-meta">
+    <span class="pill" id="scen-pill">Scenario</span>
+    <button class="btn-ghost" id="btn-share" title="Copy a link to this view">Copy link</button>
+    <button class="btn-ghost" id="btn-csv" title="Download district results as CSV">Download CSV</button>
+  </div>
+</header>
+
+<!-- ============================================================ DASHBOARD -->
+<main id="page-dashboard" class="page">
+  <aside class="panel" aria-label="Scenario, levers and district specifications">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="levers" class="active">Scenario &amp; levers</button>
+      <button role="tab" data-tab="district">District specs</button>
+      <button role="tab" data-tab="rank">Rankings</button>
+    </div>
+    <div class="panel-body">
+      <!-- levers -->
+      <div class="tab-pane active" id="tab-levers">
+        <section class="section">
+          <h3><span class="n">1</span> Scenario <button class="info" data-info="scenario" aria-label="About scenarios">i</button></h3>
+          <div class="scen-grid" id="scen-grid"></div>
+          <div class="scen-custom" id="scen-custom" hidden>Levers changed: running a <b>custom</b> scenario.</div>
+          <div class="field">
+            <div class="field-head">Adoption, share of cropland <button class="info" data-info="adoption">i</button><output id="o-adoption"></output></div>
+            <input type="range" id="adoption" min="0" max="12" step="1">
+          </div>
+          <div class="field">
+            <div class="field-head">Suitability threshold <button class="info" data-info="threshold">i</button><output id="o-threshold"></output></div>
+            <input type="range" id="threshold" min="0" max="90" step="1">
+          </div>
+        </section>
+
+        <section class="section">
+          <h3><span class="n">2</span> System design</h3>
+          <div class="field">
+            <div class="field-head">Configuration <button class="info" data-info="config">i</button></div>
+            <select id="config"></select>
+          </div>
+          <div class="field">
+            <div class="field-head">Ground coverage ratio (GCR) <button class="info" data-info="gcr">i</button><output id="o-gcr"></output></div>
+            <input type="range" id="gcr" min="0.10" max="0.60" step="0.01">
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="gcrAuto"> Use the climate zone's recommended GCR</label>
+          </div>
+          <div class="field" id="f-height">
+            <div class="field-head">Clearance height <button class="info" data-info="height">i</button><output id="o-height"></output></div>
+            <input type="range" id="height" min="2.1" max="6" step="0.1">
+          </div>
+          <div class="field">
+            <div class="field-head">Module efficiency <button class="info" data-info="eff">i</button><output id="o-eff"></output></div>
+            <input type="range" id="eff" min="18" max="26" step="0.1">
+          </div>
+          <label class="check"><input type="checkbox" id="bifacial"> Bifacial modules <button class="info" data-info="bifacial">i</button></label>
+        </section>
+
+        <section class="section">
+          <h3><span class="n">3</span> Crop</h3>
+          <div class="field">
+            <div class="field-head">Crop group <button class="info" data-info="crop">i</button></div>
+            <select id="crop"></select>
+            <div class="sub" id="crop-ex"></div>
+          </div>
+          <div class="field">
+            <div class="field-head">Crop gross margin <button class="info" data-info="margin">i</button><output id="o-margin"></output></div>
+            <input type="range" id="margin" min="20000" max="400000" step="5000">
+            <label class="check" style="margin-top:8px"><input type="checkbox" id="marginAuto"> Use the crop group's default</label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3><span class="n">4</span> Economics</h3>
+          <div class="field">
+            <div class="field-head">Capex, conventional plant <button class="info" data-info="capex">i</button><output id="o-capex"></output></div>
+            <input type="range" id="capex" min="2.5" max="6" step="0.05">
+          </div>
+          <div class="field">
+            <div class="field-head">Electricity tariff <button class="info" data-info="tariff">i</button><output id="o-tariff"></output></div>
+            <input type="range" id="tariff" min="2" max="6" step="0.05">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <div class="field-head">Discount rate <button class="info" data-info="rate">i</button><output id="o-rate"></output></div>
+              <input type="range" id="rate" min="4" max="14" step="0.5">
+            </div>
+            <div class="field">
+              <div class="field-head">O&amp;M <button class="info" data-info="om">i</button><output id="o-om"></output></div>
+              <input type="range" id="om" min="3" max="15" step="0.5">
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3><span class="n">5</span> Suitability weights <button class="info" data-info="weights">i</button></h3>
+          <div class="field"><div class="field-head">Solar resource<output id="o-wsolar"></output></div><input type="range" id="wsolar" min="0" max="100" step="5"></div>
+          <div class="field"><div class="field-head">Cropland availability<output id="o-wcrop"></output></div><input type="range" id="wcrop" min="0" max="100" step="5"></div>
+          <div class="field"><div class="field-head">Shade co-benefit (climate)<output id="o-wcobenefit"></output></div><input type="range" id="wcobenefit" min="0" max="100" step="5"></div>
+          <div class="field"><div class="field-head">Water stress<output id="o-wwater"></output></div><input type="range" id="wwater" min="0" max="100" step="5"></div>
+          <button class="btn-ghost" id="btn-reset">Reset to scenario</button>
+        </section>
+      </div>
+
+      <!-- district -->
+      <div class="tab-pane" id="tab-district"></div>
+
+      <!-- rankings -->
+      <div class="tab-pane" id="tab-rank"></div>
+    </div>
+  </aside>
+
+  <section class="map-wrap">
+    <div class="map-bar">
+      <label for="layer">Map</label>
+      <select id="layer"></select>
+      <select id="state" aria-label="State filter"><option value="">All India</option></select>
+      <div class="search-wrap">
+        <input class="search" id="search" placeholder="Search a district…" autocomplete="off" aria-label="Search a district">
+        <div class="search-results" id="search-results" hidden></div>
+      </div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="scope-line" id="scope-line"></div>
+    <div class="map-tools-wrap" style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div id="map" aria-label="Map of Indian districts"></div>
+      <div class="map-tools">
+        <button id="btn-basemap" title="Show or hide the street basemap">Basemap: off</button>
+        <button id="btn-fit" title="Zoom to the current selection">Reset view</button>
+      </div>
+    </div>
+    <div class="map-legend" id="legend"></div>
+    <div class="map-tip" id="tip" hidden></div>
+  </section>
+</main>
+
+<!-- ============================================================ KÖPPEN GUIDE -->
+<main id="page-koppen" class="page page-scroll">
+  <div class="page-wrap">
+    <div class="hero">
+      <h1 class="hero-title">Köppen climate zones and <span class="gradient-text">agrivoltaic design</span></h1>
+      <p class="hero-sub">Each district is assigned the Köppen-Geiger class that covers most of its area. The class sets the recommended configuration, GCR range, clearance, tilt, crop groups and design risks used across the dashboard.</p>
+    </div>
+    <div class="kg-cards" id="kg-cards"></div>
+  </div>
+</main>
+
+<!-- ============================================================ METHOD -->
+<main id="page-method" class="page page-scroll">
+  <div class="page-wrap" id="method-body"></div>
+</main>
+
+<!-- ============================================================ SOURCES -->
+<main id="page-sources" class="page page-scroll">
+  <div class="page-wrap" id="sources-body"></div>
+</main>
+
+<div id="popover" class="popover" role="dialog" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
