@@ -9,3 +9,4 @@ scipy==1.18.1
 shapely==2.2.0
 xarray==2026.9.0
 zarr==3.4.2
+pyarrow==26.0.0

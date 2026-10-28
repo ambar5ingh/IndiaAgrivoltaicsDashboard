@@ -25,6 +25,21 @@ os.makedirs(CACHE, exist_ok=True)
 
 # ---------------------------------------------------------------- districts
 g = gpd.read_file(GEO)
+# unnamed slivers: give each the name of the named district it borders most
+named = g[g["district"].notna()]
+for i in g.index[g["district"].isna()]:
+    geom = g.at[i, "geometry"].buffer(0)
+    cand = named[named.intersects(geom.buffer(0.01))]
+    if len(cand) == 0:
+        cand = named.iloc[[named.distance(geom).argmin()]]
+    best = cand.geometry.buffer(0).intersection(geom.buffer(0.01)).area.idxmax()
+    g.loc[i, ["state", "district", "dist_code"]] = g.loc[best, ["state", "district", "dist_code"]].values
+# the source truncates several Karnataka names; restore them from Census district codes
+KA = {"0555": "BELAGAVI", "0556": "BAGALKOTE", "0558": "BIDAR", "0562": "DHARWAD", "0564": "HAVERI", "0565": "BALLARI",
+      "0567": "DAVANAGERE", "0574": "HASSAN", "0578": "CHAMARAJANAGAR", "0580": "YADGIR", "0581": "KOLAR",
+      "0582": "CHIKKABALLAPURA", "0584": "RAMANAGARA"}
+ka = g["state"].str.upper().str.strip().eq("KARNATAKA") & g["dist_code"].isin(list(KA))
+g.loc[ka, "district"] = g.loc[ka, "dist_code"].map(KA)
 g["state"] = g["state"].str.strip().str.upper()
 g["district"] = g["district"].str.strip().str.upper()
 # the source encodes long vowels with symbols (a-macron '>', i-macron '|' or '\\', u-macron '#' or '@')

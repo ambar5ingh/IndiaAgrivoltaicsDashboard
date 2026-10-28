@@ -172,7 +172,7 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .search-results button span { color: var(--muted); font-size: .72rem; }
 .search-results button:hover, .search-results button.hi { background: var(--light); }
 
-.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; padding: 10px 14px; position: relative; z-index: 700; flex: none; }
+.kpis { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 10px 14px; position: relative; z-index: 700; flex: none; }
 .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; box-shadow: var(--shadow); min-width: 0; }
 .kpi .k { font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; }
 .kpi .v { font-size: 1.25rem; font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
@@ -195,6 +195,7 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .ramp-labels { display: flex; justify-content: space-between; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 3px; width: 220px; }
 .cat-legend { display: grid; grid-template-columns: repeat(2, auto); gap: 3px 12px; }
 .cat-legend div { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cat-legend .span { grid-column: 1 / -1; white-space: normal; align-items: flex-start; line-height: 1.3; }
 .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .map-tip {
   position: absolute; z-index: 760; pointer-events: none; background: var(--dark-green); color: var(--cream); border-radius: 8px; padding: 7px 10px;
@@ -275,8 +276,31 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .tbl-wrap { overflow-x: auto; }
 .footer-note { font-size: .74rem; color: var(--muted); text-align: center; margin-top: 24px; }
 
+/* overlays */
+.grat-label { font-size: 10px; color: #1f3663; opacity: .7; font-weight: 600; white-space: nowrap; }
+.btn[disabled], .check input:disabled { opacity: .5; }
+
+/* ---------------------------------------------------------------- shadow page */
+.page-wrap.wide { max-width: 1400px; }
+.hero-sm { padding: 24px 0 14px; }
+.sh-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.sh-controls { position: sticky; top: 12px; }
+.sh-controls .field { margin: 8px 0 12px; }
+.sh-main .card { margin-bottom: 14px; }
+.sh-main .card h2 { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.sh-kpis { padding: 0; margin-bottom: 14px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.sh-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.sh-3d { width: 100%; height: 420px; border-radius: 10px; overflow: hidden; background: #dfeef7; position: relative; }
+.sh-3d canvas { display: block; }
+.sh-3d .fallback { padding: 40px; text-align: center; color: var(--muted); }
+.sh-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .72rem; color: var(--muted); margin-top: 6px; }
+.sh-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.play { display: flex; gap: 8px; align-items: center; }
+.sh-district { font-weight: 800; color: var(--navy); font-size: 1.05rem; }
+.sh-district small { display: block; color: var(--muted); font-weight: 600; font-size: .74rem; }
+
 /* ---------------------------------------------------------------- responsive */
-@media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1360px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 900px) {
   body { overflow: auto; }
   .site-header { flex-wrap: wrap; gap: 8px; }
@@ -296,4 +320,9 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
   .map-bar select { max-width: none; flex: 1; }
   .ramp, .ramp-labels { width: 180px; }
   .page { min-height: auto; }
+  .sh-grid, .sh-two { grid-template-columns: 1fr; }
+  .sh-controls { position: static; }
+  .sh-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sh-3d { height: 320px; }
 }
+.hint { font-size: .78rem; color: var(--muted); line-height: 1.45; }

@@ -1,5 +1,7 @@
-import { KOPPEN, KOPPEN_GROUP, CROPS, CONFIGS, SCENARIOS, ADOPTION_STEPS, INFO, GRID_EF, REF_GCR } from './knowledge.js';
-import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf } from './model.js';
+import { KOPPEN, KOPPEN_GROUP, CROPS, CONFIGS, MODULES, ACR, SCENARIOS, ADOPTION_STEPS, INFO, GRID_EF, REF_GCR } from './knowledge.js';
+import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf, gridScore } from './model.js';
+import { acrOf, agroClimate } from './agroclimate.js';
+import { initShadowPage, renderShadowPage, shadowSummaryHTML } from './shadowpage.js';
 import { methodHTML, sourcesHTML } from './pages.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -10,7 +12,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---------------------------------------------------------------- state
-const DEFAULT_W = { solar: 35, crop: 30, cobenefit: 20, water: 15 };
+const DEFAULT_W = { solar: 30, crop: 25, cobenefit: 15, water: 15, grid: 15 };
 const S = {
   scenario: 'moderate', custom: false,
   L: null, W: { ...DEFAULT_W },
@@ -19,7 +21,7 @@ const S = {
 function scenarioLevers(key) {
   const sc = SCENARIOS[key];
   return { adoption: sc.adoption, threshold: sc.threshold, config: sc.config, gcr: sc.gcr, gcrAuto: false, height: 3.5, eff: sc.eff,
-    bifacial: true, crop: 'auto', margin: 120000, marginAuto: true, capex: sc.capex, tariff: sc.tariff, rate: 9, om: 7 };
+    bifacial: true, module: 'topcon', crop: 'auto', margin: 120000, marginAuto: true, capex: sc.capex, tariff: sc.tariff, rate: 9, om: 7 };
 }
 S.L = scenarioLevers(S.scenario);
 
@@ -44,13 +46,18 @@ async function init() {
     $('#load-text').textContent = 'Could not load data: ' + e.message;
     return;
   }
-  D.forEach(d => byId.set(d.id, d));
+  try {
+    const grid = await fetchJSON('data/grid.json', 'Loading grid access…', 98);
+    D.forEach(d => { d.grid = grid[d.id] || null; });
+  } catch (e) { /* grid layer optional */ }
+  D.forEach(d => { byId.set(d.id, d); d.acr = acrOf(d); d.ac = agroClimate(d); });
   readHash();
   for (const d of D) T.set(d.id, districtTotals(d, S.L, S.W));
   layerDomain();
   buildControls();
   buildMap();
   buildStatic();
+  initShadowPage(shadowCtx());
   recompute();
   route();
   $('#loading').style.display = 'none';
@@ -62,6 +69,7 @@ function route() {
   const page = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'dashboard';
   $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   $('#popover').hidden = true;
+  if (page === 'shadow') renderShadowPage(shadowCtx());
   $$('.main-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   if (page === 'dashboard' && map) setTimeout(() => {
     map.invalidateSize();
@@ -92,11 +100,20 @@ function shareURL() {
 // ---------------------------------------------------------------- layers
 const RAMP = ['#f6f1e2', '#d7ecd9', '#a9d8bd', '#78c8a5', '#46a383', '#2a7a63', '#1a5546', '#13322c'];
 const LAYERS = {
-  koppen: { label: 'Köppen-Geiger climate class', cat: true, info: 'koppen' },
+  koppen: { label: 'Köppen-Geiger climate class', cat: true, info: 'koppen', color: d => koppenOf(d).color, key: d => d.kg,
+    name: k => `${k} · ${KOPPEN[k].name.split(' (')[0]}`, keys: () => Object.keys(KOPPEN), colorOfKey: k => KOPPEN[k].color, tip: d => `${d.kg} · ${koppenOf(d).name}` },
+  acr:    { label: 'Agro-climatic region (Planning Commission)', cat: true, info: 'acr', color: d => ACR[d.acr].color, key: d => d.acr,
+    name: k => `${k} · ${ACR[k].name.replace(' Region', '')}`, keys: () => Object.keys(ACR).map(Number), colorOfKey: k => ACR[k].color, tip: d => `${d.acr} · ${ACR[d.acr].name}` },
   suit:   { label: 'Agrivoltaic suitability score', unit: '/100', get: (d, t) => t.s, dec: 0, info: 'suit', domain: [0, 100] },
   mw:     { label: 'Scenario capacity (MWp)', unit: 'MWp', get: (d, t) => t.mw, dec: 0, info: 'capacity', zeroGrey: true },
   ler:    { label: 'Land Equivalent Ratio (LER)', unit: '', get: (d, t) => t.e.ler, dec: 2, info: 'ler' },
   croprel:{ label: 'Relative crop yield under panels', unit: '%', get: (d, t) => t.e.cropRel * 100, dec: 0, info: 'crop_rel' },
+  irr:    { label: 'Project IRR (%)', unit: '%', get: (d, t) => t.e.irr * 100, dec: 1, info: 'irr' },
+  payback:{ label: 'Simple payback (years)', unit: 'yr', get: (d, t) => t.e.payback, dec: 1, info: 'payback' },
+  gridd:  { label: 'Distance to ≥66 kV substation (km)', unit: 'km', get: d => d.grid ? d.grid.dsub : NaN, dec: 0, info: 'grid', domain: [0, 60] },
+  gridl:  { label: 'Transmission line density (km/100 km²)', unit: 'km/100km²', get: d => d.grid ? d.grid.dens : NaN, dec: 1, info: 'grid' },
+  ai:     { label: 'Aridity index (rain ÷ PET)', unit: '', get: d => d.ac.ai, dec: 2, info: 'ai', domain: [0, 1.5] },
+  lgp:    { label: 'Length of growing period (days)', unit: 'days', get: d => d.ac.lgp, dec: 0, info: 'lgp', domain: [0, 300] },
   ghi:    { label: 'Solar resource, GHI (kWh/m²/day)', unit: 'kWh/m²/d', get: d => d.ghi, dec: 2, info: 'ghi' },
   yield:  { label: 'Specific yield (kWh/kWp/yr)', unit: 'kWh/kWp', get: (d, t) => t.e.Y, dec: 0, info: 'yield' },
   lcoe:   { label: 'LCOE (₹/kWh)', unit: '₹/kWh', get: (d, t) => t.e.lcoe, dec: 2, info: 'lcoe' },
@@ -131,7 +148,7 @@ function layerDomain() {
 }
 function fillFor(d) {
   const Ly = LAYERS[S.layer];
-  if (Ly.cat) return koppenOf(d).color;
+  if (Ly.cat) return Ly.color(d);
   const v = Ly.get(d, T.get(d.id));
   if (Ly.zeroGrey && !(v > 0)) return '#e8e4d8';
   return rampColor(v, domain[0], domain[1]);
@@ -148,6 +165,7 @@ function recompute() {
   renderLegend();
   renderDistrict();
   renderRank();
+  if ($('#page-shadow').classList.contains('active')) renderShadowPage(shadowCtx());
   $('#scen-pill').textContent = (S.custom ? 'Custom · ' : '') + SCENARIOS[S.scenario].label;
 }
 
@@ -168,6 +186,8 @@ function buildControls() {
   // selects
   $('#config').innerHTML = `<option value="auto">Best fit for the climate zone (auto)</option>` +
     Object.entries(CONFIGS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
+  $('#module').innerHTML = Object.entries(MODULES).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join('');
+  $('#module').onchange = e => { S.L.module = e.target.value; S.L.eff = MODULES[e.target.value].eff; if (!MODULES[e.target.value].bifi) S.L.bifacial = false; changed(); };
   $('#crop').innerHTML = Object.entries(CROPS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
   $('#layer').innerHTML = Object.entries(LAYERS).map(([k, l]) => `<option value="${k}">${esc(l.label)}</option>`).join('');
   const states = [...new Set(D.map(d => d.st))].sort();
@@ -191,6 +211,8 @@ function buildControls() {
   $('#state').onchange = e => { S.stateFilter = e.target.value; layerDomain(); restyle(); renderKPIs(); renderLegend(); renderRank(); fitScope(); };
   $('#btn-fit').onclick = fitScope;
   $('#btn-basemap').onclick = toggleBasemap;
+  $('#btn-grid').onclick = togglePowerGrid;
+  $('#btn-graticule').onclick = toggleGraticule;
   $('#btn-share').onclick = async () => {
     const u = shareURL();
     try { await navigator.clipboard.writeText(u); flash('#btn-share', 'Copied'); } catch (e) { prompt('Copy this link', u); }
@@ -224,7 +246,10 @@ function syncControls() {
   $('#adoption').max = ADOPTION_STEPS.length - 1; $('#adoption').value = ai;
   $('#o-adoption').textContent = fmt(L.adoption, L.adoption < 0.1 ? 3 : (L.adoption < 1 ? 2 : 1)) + '%';
   for (const [k, f] of Object.entries(SLIDERS)) { $('#' + k).value = L[k]; $('#o-' + k).textContent = f(L[k]); }
-  $('#config').value = L.config; $('#crop').value = L.crop;
+  $('#config').value = L.config; $('#crop').value = L.crop; $('#module').value = L.module;
+  const mod = MODULES[L.module];
+  $('#module-ex').textContent = `${mod.note} Temperature coefficient ${mod.gamma}%/°C, degradation ${mod.deg}%/yr${mod.bifi ? `, bifaciality ${Math.round(mod.bifi * 100)}%` : ', monofacial only'}.`;
+  $('#bifacial').disabled = !mod.bifi;
   $('#gcrAuto').checked = L.gcrAuto; $('#marginAuto').checked = L.marginAuto; $('#bifacial').checked = L.bifacial;
   $('#o-gcr').textContent = L.gcrAuto ? 'by zone' : fmt(L.gcr, 2);
   $('#o-margin').textContent = L.marginAuto ? 'by crop' : SLIDERS.margin(L.margin);
@@ -255,7 +280,7 @@ function openInfo(btn) {
 function buildMap() {
   map = L.map('map', { preferCanvas: true, zoomSnap: 0.25, minZoom: 3.5, maxZoom: 11, attributionControl: true, zoomControl: true });
   map.attributionControl.setPrefix(false);
-  map.attributionControl.addAttribution('Boundaries: datta07/INDIAN-SHAPEFILES · Data: NASA POWER, ESA WorldCover, Köppen-Geiger (Rubel et al.)');
+  map.attributionControl.addAttribution('Boundaries: datta07/INDIAN-SHAPEFILES · Data: NASA POWER, ESA WorldCover, Köppen-Geiger (Rubel et al.) · Grid: © OpenStreetMap contributors (Overture Maps)');
   const renderer = L.canvas({ padding: 0.3, tolerance: 2 });
   distLayer = L.geoJSON(geo, {
     renderer,
@@ -296,7 +321,7 @@ function toggleBasemap() {
 }
 function showTip(e, d) {
   const t = T.get(d.id), Ly = LAYERS[S.layer];
-  const v = Ly.cat ? `${d.kg} · ${koppenOf(d).name}` : `${fmt(Ly.get(d, t), Ly.dec)} ${Ly.unit}`;
+  const v = Ly.cat ? Ly.tip(d) : `${fmt(Ly.get(d, t), Ly.dec)} ${Ly.unit}`;
   const tip = $('#tip');
   tip.innerHTML = `<b>${esc(d.d)}</b>, ${esc(d.st)}<br><span class="m">${esc(v)}</span>`;
   tip.hidden = false;
@@ -320,25 +345,25 @@ function renderLegend() {
   const info = Ly.info ? ` <button class="info" data-info="${Ly.info}">i</button>` : '';
   if (Ly.cat) {
     const present = {};
-    D.filter(inScope).forEach(d => present[d.kg] = (present[d.kg] || 0) + 1);
-    const keys = Object.keys(KOPPEN).filter(k => present[k]);
+    D.filter(inScope).forEach(d => { const k = Ly.key(d); present[k] = (present[k] || 0) + 1; });
+    const keys = Ly.keys().filter(k => present[k]);
     el.innerHTML = `<div class="t">${esc(Ly.label)}${info}</div><div class="cat-legend">` +
-      keys.map(k => `<div><span class="sw" style="background:${KOPPEN[k].color}"></span>${k} · ${esc(KOPPEN[k].name.split(' (')[0])} <span style="color:var(--muted)">(${present[k]})</span></div>`).join('') + '</div>';
+      keys.map(k => `<div><span class="sw" style="background:${Ly.colorOfKey(k)}"></span>${esc(Ly.name(k))} <span style="color:var(--muted)">(${present[k]})</span></div>`).join('') + '</div>' + overlayLegend();
     return;
   }
   const grad = `linear-gradient(90deg, ${RAMP.join(',')})`;
   el.innerHTML = `<div class="t">${esc(Ly.label)}${info}</div><div class="ramp" style="background:${grad}"></div>
     <div class="ramp-labels"><span>${fmt(domain[0], Ly.dec)}</span><span>${fmt((domain[0] + domain[1]) / 2, Ly.dec)}</span><span>${fmt(domain[1], Ly.dec)}</span></div>` +
-    (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '');
+    (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '') + overlayLegend();
 }
 function scopeTotals() {
-  let mw = 0, gwh = 0, ha = 0, inv = 0, co2 = 0, ler = 0, n = 0, all = 0, cropHa = 0;
+  let mw = 0, gwh = 0, ha = 0, inv = 0, co2 = 0, ler = 0, n = 0, all = 0, cropHa = 0, irrW = 0;
   for (const d of D) {
     if (!inScope(d)) continue;
     const t = T.get(d.id); all++; cropHa += t.cropHa;
-    if (t.ha > 0) { n++; mw += t.mw; gwh += t.gwh; ha += t.ha; inv += t.inv; co2 += t.co2; ler += t.e.ler * t.ha; }
+    if (t.ha > 0) { n++; mw += t.mw; gwh += t.gwh; ha += t.ha; inv += t.inv; co2 += t.co2; ler += t.e.ler * t.ha; if (isFinite(t.e.irr)) irrW += t.e.irr * t.mw; }
   }
-  return { mw, gwh, ha, inv, co2, ler: ha ? ler / ha : NaN, n, all, cropHa };
+  return { mw, gwh, ha, inv, co2, ler: ha ? ler / ha : NaN, irr: mw ? irrW / mw : NaN, n, all, cropHa };
 }
 function renderKPIs() {
   const s = scopeTotals();
@@ -349,6 +374,7 @@ function renderKPIs() {
     k('Generation', fmt(s.gwh / 1000, s.gwh < 10000 ? 1 : 0), 'TWh/yr', 'yield') +
     k('Land shared', fmt(s.ha / 1000, s.ha < 10000 ? 1 : 0), "'000 ha", 'adoption') +
     k('Avg. LER', fmt(s.ler, 2), '', 'ler') +
+    k('Project IRR', fmt(s.irr * 100, 1), '%', 'irr') +
     k('Investment', fmt(s.inv / 1e5, s.inv < 1e5 ? 2 : 1), '₹ lakh cr', 'capex') +
     k('CO₂ avoided', fmt(s.co2, s.co2 < 10 ? 1 : 0), 'Mt/yr', 'co2');
   $('#scope-line').innerHTML = `<b>${esc(S.stateFilter || 'All India')}</b> · ${s.n} of ${s.all} districts at or above the suitability threshold · cropland ${fmt(s.cropHa / 1e6, 1)} million ha · scenario: ${esc((S.custom ? 'custom, based on ' : '') + SCENARIOS[S.scenario].label)}`;
@@ -455,6 +481,64 @@ function renderDistrict() {
   </section>
 
   <section class="section">
+    <h3>Agro-climatic conditions${info('acr')}</h3>
+    <div class="kg-badge"><div class="kg-code" style="background:${ACR[d.acr].color};color:${textOn(ACR[d.acr].color)}">${d.acr}</div>
+      <div><div class="kg-name">${esc(ACR[d.acr].name)}</div><div class="kg-desc">Rainfall ${esc(ACR[d.acr].rain)} · ${esc(ACR[d.acr].soils)}</div></div></div>
+    <div class="mini-grid" style="margin-bottom:6px">
+      ${mini('Aridity', fmt(d.ac.ai, 2), esc(d.ac.cls), 'ai')}
+      ${mini('Growing period', fmt(d.ac.lgp), 'days', 'lgp')}
+      ${mini('Water deficit', fmt(d.ac.deficit), 'mm/yr', 'deficit')}
+    </div>
+    <table class="spec">
+      <tr><td>Major crops of the region</td><td>${esc(ACR[d.acr].crops)}</td></tr>
+      <tr><td>Kharif rain (Jun–Sep)</td><td>${fmt(d.ac.kharif)} mm (${fmt(100 * d.ac.kharif / Math.max(1, d.rain))}% of annual)</td></tr>
+      <tr><td>Rabi-season rain (Oct–Mar)</td><td>${fmt(d.ac.rabi)} mm${d.ac.rabi < 100 ? ' · rabi crops need irrigation' : ''}</td></tr>
+      <tr><td>Reference ET (Hargreaves)</td><td>${fmt(d.ac.PET)} mm/yr</td></tr>
+      <tr><td>Agrivoltaics angle</td><td>${esc(ACR[d.acr].av)}</td></tr>
+    </table>
+    ${barChart(d.ac.pet.map((e, m) => Math.max(0, e - d.rm[m])), 'Monthly water deficit (PET − rain)', 'mm', 0, '#c0564b')}
+  </section>
+
+  <section class="section">
+    <h3>Grid access${info('grid')}</h3>
+    ${d.grid ? `<div class="mini-grid">
+      ${mini('Nearest ≥66 kV', fmt(d.grid.dsub, 1), 'km')}
+      ${mini('Substations', fmt(d.grid.sub), `(${d.grid.subhv} ≥66 kV)`)}
+      ${mini('Lines', fmt(d.grid.lkm), 'km')}
+    </div>
+    <table class="spec" style="margin-top:6px">
+      <tr><td>Line density</td><td>${fmt(d.grid.dens, 1)} km per 100 km²</td></tr>
+      <tr><td>≥132 kV lines in district</td><td>${fmt(d.grid.lhv)} km</td></tr>
+      <tr><td>Grid score (suitability input)</td><td>${fmt(gridScore(d) * 100)}/100</td></tr>
+      <tr><td>Connection note</td><td>${d.grid.dsub != null && d.grid.dsub < 15 ? 'Close to a substation: suits 0.5–2 MW PM-KUSUM-A feeder-level plants.' : 'Farther from substations: favour feeder-level or captive (pumping) use, or budget for a longer line.'}</td></tr>
+    </table>
+    <div style="margin-top:8px"><button class="btn-ghost" id="d-showgrid">Show the power grid on the map</button></div>` : '<p class="hint">No grid data for this district.</p>'}
+  </section>
+
+  <section class="section">
+    <h3>Shadow analysis${info('shadow')}</h3>
+    <div id="d-shadow">${shadowSummaryHTML(d, e, S.L)}</div>
+    <div style="margin-top:8px"><a class="btn" href="#/shadow" style="text-decoration:none;display:inline-block">Open 2D / 3D shadow analysis</a></div>
+  </section>
+
+  <section class="section">
+    <h3>Financials per MWp${info('irr')}</h3>
+    <div class="mini-grid">
+      ${mini('Project IRR', fmt(e.irr * 100, 1), '%', 'irr')}
+      ${mini('Payback', fmt(e.payback, 1), 'years', 'payback')}
+      ${mini('NPV', '₹' + fmt(e.npv, 2), 'cr/MWp', 'npv')}
+    </div>
+    <table class="spec" style="margin-top:6px">
+      <tr><td>IRR incl. crop change${info('irr_sys')}</td><td>${fmt(e.irrSys * 100, 1)}%</td></tr>
+      <tr><td>Module</td><td>${esc(e.mod.label)}</td></tr>
+      <tr><td>Year-1 yield</td><td>${fmt(e.Y1)} kWh/kWp, falling ${e.mod.deg}%/yr</td></tr>
+      <tr><td>Capex</td><td>₹${fmt(e.capex, 2)} crore/MWp</td></tr>
+      <tr><td>Tariff / LCOE</td><td>₹${fmt(S.L.tariff, 2)} / ₹${fmt(e.lcoe, 2)} per kWh</td></tr>
+    </table>
+    ${cashChart(e.cf)}
+  </section>
+
+  <section class="section">
     <h3>Design notes and risks</h3>
     <ul class="notes">${k.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
     <div class="chips" style="margin-top:8px">${risks.map(r => `<span class="chip warn">${esc(r)}</span>`).join('')}</div>
@@ -474,6 +558,7 @@ function renderDistrict() {
       <tr><td>Tariff vs LCOE</td><td>${e.lcoe <= S.L.tariff ? `Viable: tariff exceeds LCOE by ₹${fmt(S.L.tariff - e.lcoe, 2)}/kWh` : `Viability gap of ₹${fmt(e.lcoe - S.L.tariff, 2)}/kWh`}</td></tr>
     </table>
   </section>`;
+  const sg = $('#d-showgrid'); if (sg) sg.onclick = () => { if (!gridLayer || !map.hasLayer(gridLayer)) togglePowerGrid(); select(d.id, true); };
   $('#d-close').onclick = () => { S.selected = null; restyle(); renderDistrict(); showTab('levers'); };
 }
 
@@ -490,6 +575,20 @@ function barChart(vals, title, unit, dec, color) {
   }).join('');
   return `<div class="chart-title"><span>${title}</span><span>${unit}</span></div>
     <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}"><line x1="0" x2="${W}" y1="${H - pad.b}" y2="${H - pad.b}" stroke="#e6dec8"/>${bars}</svg>`;
+}
+function cashChart(cf) {
+  const W = 360, H = 120, pad = { l: 6, r: 6, t: 12, b: 16 };
+  let cum = 0; const cs = cf.map(x => (cum += x) / 1e7);
+  const lo = Math.min(0, ...cs), hi = Math.max(0, ...cs), bw = (W - pad.l - pad.r) / cs.length;
+  const py = v => pad.t + (H - pad.t - pad.b) * (hi - v) / (hi - lo || 1), y0 = py(0);
+  const bars = cs.map((v, i) => {
+    const x = pad.l + i * bw + 1, w = bw - 2, y = Math.min(py(v), y0), h = Math.max(1, Math.abs(py(v) - y0));
+    return `<g><title>Year ${i}: cumulative ₹${fmt(v, 2)} crore per MWp</title><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="${v >= 0 ? '#2a7a63' : '#c0564b'}"/></g>`;
+  }).join('');
+  return `<div class="chart-title"><span>Cumulative cash flow, ₹ crore per MWp</span><span>years 0–25</span></div>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative cash flow"><line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="#94a3b8"/>${bars}
+    <text x="${pad.l}" y="${H - 3}" font-size="9" fill="#64748b">0</text><text x="${W / 2}" y="${H - 3}" font-size="9" text-anchor="middle" fill="#64748b">12</text><text x="${W - pad.r}" y="${H - 3}" font-size="9" text-anchor="end" fill="#64748b">25</text>
+    <text x="${W - pad.r}" y="${py(cs[cs.length - 1]) - 4}" font-size="9" text-anchor="end" font-weight="700" fill="#1f2937">₹${fmt(cs[cs.length - 1], 2)} cr</text></svg>`;
 }
 function lineChart(vals, title, unit, dec) {
   const W = 360, H = 96, pad = { l: 10, r: 10, t: 16, b: 16 };
@@ -509,7 +608,7 @@ function lineChart(vals, title, unit, dec) {
 
 // ---------------------------------------------------------------- rankings
 const RANK_COLS = {
-  s: ['Suit.', t => t.s, 0], mw: ['MWp', t => t.mw, 0], ler: ['LER', t => t.e.ler, 2], lcoe: ['₹/kWh', t => t.e.lcoe, 2],
+  s: ['Suit.', t => t.s, 0], mw: ['MWp', t => t.mw, 0], ler: ['LER', t => t.e.ler, 2], irr: ['IRR %', t => t.e.irr * 100, 1], lcoe: ['₹/kWh', t => t.e.lcoe, 2],
 };
 function renderRank() {
   const el = $('#tab-rank');
@@ -546,10 +645,10 @@ function buildSearch() {
 
 // ---------------------------------------------------------------- CSV
 function downloadCSV() {
-  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_pct', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt'];
+  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_pct', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'project_irr_pct', 'payback_yr', 'module', 'agro_climatic_region', 'aridity_index', 'growing_period_days', 'dist_to_substation_km', 'line_density_km_per_100km2', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt'];
   const rows = D.map(d => {
     const t = T.get(d.id), e = t.e;
-    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.ghi, d.t, d.rain, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000]
+    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.ghi, d.t, d.rain, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, e.irr * 100, e.payback, e.mod.short, ACR[d.acr].name, d.ac.ai, d.ac.lgp, d.grid ? d.grid.dsub : '', d.grid ? d.grid.dens : '', t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000]
       .map(v => typeof v === 'number' ? +v.toFixed(3) : `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob([head.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
@@ -575,8 +674,67 @@ function buildStatic() {
       <ul class="notes">${z.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
       <div class="chips" style="margin-top:6px">${z.risks.map(r => `<span class="chip warn">${esc(r)}</span>`).join('')}</div></div></article>`;
   }).join('');
-  $('#method-body').innerHTML = methodHTML({ CONFIGS, CROPS, REF_GCR, GRID_EF });
+  $('#method-body').innerHTML = methodHTML({ CONFIGS, CROPS, MODULES, REF_GCR, GRID_EF });
   $('#sources-body').innerHTML = sourcesHTML();
+}
+
+
+// ---------------------------------------------------------------- overlays: power grid and lat/long graticule
+const KV_COLORS = { 765: '#7a0177', 400: '#c51b8a', 220: '#f768a1', 132: '#1f3663', 66: '#5b8fd1', 33: '#9ecae1', 0: '#8c8c8c' };
+let gridLayer = null, gridLoading = false, gratLayer = null;
+function overlayLegend() {
+  let h = '';
+  if (gridLayer && map.hasLayer(gridLayer)) {
+    h += `<div class="t" style="margin-top:8px">Power grid (OpenStreetMap) <button class="info" data-info="grid">i</button></div><div class="cat-legend">` +
+      [765, 400, 220, 132, 66, 0].map(b => `<div><span class="sw" style="background:${KV_COLORS[b]};height:4px;border-radius:2px"></span>${b ? b + ' kV' : 'Voltage not tagged'}</div>`).join('') +
+      `<div class="span"><span class="sw" style="background:#fff;border:2px solid #13322c;border-radius:50%"></span>Substation ≥220 kV<br>(66–132 kV appear when zoomed in)</div></div>`;
+  }
+  return h;
+}
+async function togglePowerGrid() {
+  const btn = $('#btn-grid');
+  if (gridLayer) {
+    if (map.hasLayer(gridLayer)) map.removeLayer(gridLayer); else gridLayer.addTo(map);
+  } else {
+    if (gridLoading) return;
+    gridLoading = true; btn.textContent = 'Power grid: loading…';
+    try {
+      const [lines, subs] = await Promise.all([fetch('data/grid_lines.geojson').then(r => r.json()), fetch('data/substations.json').then(r => r.json())]);
+      const rend = L.canvas({ padding: 0.3 });
+      const order = { 0: 0, 66: 1, 132: 2, 220: 3, 400: 4, 765: 5 };
+      lines.features.sort((a, b) => order[a.properties.b] - order[b.properties.b]);
+      const lineLayer = L.geoJSON(lines, { renderer: rend, interactive: false,
+        style: f => ({ color: KV_COLORS[f.properties.b], weight: f.properties.b >= 400 ? 2.2 : f.properties.b >= 220 ? 1.6 : 1, opacity: 0.9 }) });
+      const dot = ([x, y, b, n]) => L.circleMarker([y, x], { renderer: rend, radius: b >= 400 ? 3 : b >= 220 ? 2.2 : 1.4,
+        color: '#13322c', weight: b >= 220 ? 1 : 0.6, fillColor: '#ffffff', fillOpacity: 1 }).bindTooltip(`${n ? esc(n) + ' · ' : ''}${b} kV substation`);
+      const subHV = L.layerGroup(subs.filter(s => s[2] >= 220).map(dot));
+      const subLV = L.layerGroup(subs.filter(s => s[2] < 220).map(dot)); // 66 and 132 kV, shown once zoomed in
+      gridLayer = L.layerGroup([lineLayer, subHV]).addTo(map);
+      const zoomSubs = () => { const on = map.hasLayer(gridLayer) && map.getZoom() >= 6.5; if (on && !gridLayer.hasLayer(subLV)) gridLayer.addLayer(subLV); else if (!on && gridLayer.hasLayer(subLV)) gridLayer.removeLayer(subLV); };
+      map.on('zoomend', zoomSubs); zoomSubs();
+    } catch (e) { console.error('power grid', e); btn.textContent = 'Power grid: failed'; gridLoading = false; return; }
+    gridLoading = false;
+  }
+  btn.textContent = 'Power grid: ' + (map.hasLayer(gridLayer) ? 'on' : 'off');
+  renderLegend();
+}
+function toggleGraticule() {
+  if (!gratLayer) {
+    const ls = [];
+    for (let lat = 6; lat <= 38; lat += 2) ls.push(L.polyline([[lat, 66], [lat, 100]], { color: '#1f3663', weight: lat % 10 === 0 ? 1 : 0.5, opacity: 0.35, dashArray: '4 4', interactive: false }));
+    for (let lon = 66; lon <= 100; lon += 2) ls.push(L.polyline([[5, lon], [38, lon]], { color: '#1f3663', weight: lon % 10 === 0 ? 1 : 0.5, opacity: 0.35, dashArray: '4 4', interactive: false }));
+    const labels = [];
+    for (let lat = 8; lat <= 36; lat += 4) labels.push(L.marker([lat, 67.2], { interactive: false, icon: L.divIcon({ className: 'grat-label', html: lat + '°N', iconSize: [34, 14] }) }));
+    for (let lon = 68; lon <= 98; lon += 4) labels.push(L.marker([6.2, lon], { interactive: false, icon: L.divIcon({ className: 'grat-label', html: lon + '°E', iconSize: [34, 14] }) }));
+    gratLayer = L.layerGroup([...ls, ...labels]);
+  }
+  if (map.hasLayer(gratLayer)) map.removeLayer(gratLayer); else gratLayer.addTo(map);
+  $('#btn-graticule').textContent = 'Lat/long grid: ' + (map.hasLayer(gratLayer) ? 'on' : 'off');
+}
+
+// ---------------------------------------------------------------- shadow page context
+function shadowCtx() {
+  return { D, byId, T, S, evaluate, onLever: () => { S.custom = true; syncControls(); recompute(); }, select: id => { S.selected = id; restyle(); renderDistrict(); } };
 }
 
 init();

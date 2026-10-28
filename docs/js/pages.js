@@ -1,12 +1,13 @@
 // Methodology and sources pages.
 const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
 
-export function methodHTML({ CONFIGS, CROPS, REF_GCR, GRID_EF }) {
+export function methodHTML({ CONFIGS, CROPS, MODULES, REF_GCR, GRID_EF }) {
+  const modRows = Object.values(MODULES).map(m => `<tr><td>${m.label}</td><td>${m.eff}%</td><td>${m.gamma}%/°C</td><td>${m.deg}%/yr</td><td>${m.bifi ? Math.round(m.bifi * 100) + '%' : 'monofacial'}</td><td>${m.capexAdj >= 0 ? '+' : ''}${Math.round(m.capexAdj * 100)}%</td></tr>`).join('');
   const cfgRows = Object.values(CONFIGS).map(c => `<tr><td>${c.label}</td><td>${c.gcr}</td><td>${c.kshade}</td><td>${Math.round(c.landLoss * 100)}%</td><td>${c.ftilt}</td><td>+${Math.round(c.bif * 100)}%</td><td>${c.tcool} °C</td><td>+${Math.round(c.prem * 100)}%</td></tr>`).join('');
   const cropRows = Object.entries(CROPS).filter(([k]) => k !== 'auto').map(([, c]) => `<tr><td>${c.label}</td><td>${c.examples}</td><td>${c.alpha}</td><td>₹${(c.margin / 1000).toLocaleString('en-IN')}k</td></tr>`).join('');
   return `
   <div class="hero"><h1 class="hero-title">How the <span class="gradient-text">dashboard works</span></h1>
-  <p class="hero-sub">A transparent screening model for all ${'790'} districts. It is meant for comparing districts and testing levers, not for designing a specific site.</p></div>
+  <p class="hero-sub">A transparent screening model for all 791 districts. It is meant for comparing districts and testing levers, not for designing a specific site.</p></div>
 
   <div class="card"><h2>1. District data</h2>
   <p>For every district the build script (<code>pipeline/build_data.py</code>) samples about 300 m grid cells inside the boundary and averages:</p>
@@ -18,13 +19,14 @@ export function methodHTML({ CONFIGS, CROPS, REF_GCR, GRID_EF }) {
   </ul></div>
 
   <div class="card"><h2>2. Energy</h2>
-  <div class="formula">Specific yield (kWh/kWp/yr) = GHI × 365 × F_tilt × (1 − temperature loss) × (1 − soiling) × 0.86 × 0.94 × (1 + bifacial gain)
+  <div class="formula">Year-1 yield (kWh/kWp/yr) = GHI × 365 × F_tilt × (1 − temperature loss) × (1 − soiling) × 0.86 × (1 + bifacial gain)
+Lifetime-average yield  = year-1 yield × (1 − degradation × 12)
 F_tilt          = (1 + 0.0045 × |latitude|) × configuration factor   (tracker 1.13, vertical 0.80)
 Cell temperature ≈ T_mean + 24 − ventilation cooling − 1.0 × (wind − 2 m/s)
-Temperature loss = 0.35 %/°C × max(0, T_cell − 25)
+Temperature loss = |γ| × max(0, T_cell − 25)        (γ from the module technology)
 Capacity density (MWp/ha) = GCR × module efficiency × 10
 Energy per ha (MWh/ha/yr) = density × specific yield</div>
-  <p>0.86 covers inverter, wiring, mismatch and availability losses; 0.94 is the average output over 25 years at about 0.5% degradation a year. Soiling is 2–6% depending on the climate class, highest in the Thar desert.</p></div>
+  <p>0.86 covers inverter, wiring, mismatch and availability losses. Degradation, temperature coefficient and bifaciality come from the module technology (section 5). Soiling is 2–6% depending on the climate class, highest in the Thar desert.</p></div>
 
   <div class="card"><h2>3. Crop and Land Equivalent Ratio</h2>
   <div class="formula">Shade (light reduction at crop level) = GCR × k_shade(configuration)
@@ -50,7 +52,28 @@ f_cobenefit = β / 0.6           f_water = aridity
   <h3>Economics</h3>
   <div class="formula">LCOE (₹/kWh) = (capex × CRF + O&amp;M) ÷ annual generation,   CRF = r / (1 − (1 + r)^−25)</div></div>
 
-  <div class="card"><h2>6. Limitations</h2>
+  <div class="card"><h2>6. Module technology and financials</h2>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Technology</th><th>Default efficiency</th><th>Temperature coefficient</th><th>Degradation</th><th>Bifaciality</th><th>Capex vs PERC</th></tr></thead><tbody>${modRows}</tbody></table></div>
+  <div class="formula">Cash flow, year 0  = −capex per MWp
+Cash flow, year y  = year-1 yield × (1 − degradation)^(y−1) × tariff − O&amp;M × 1.03^(y−1),   y = 1…25
+Project IRR        = rate at which the 25-year NPV is zero (unlevered, pre-tax)
+IRR incl. crops    = same, adding (relative crop yield − 1) × crop margin ÷ capacity density each year</div></div>
+
+  <div class="card"><h2>7. Power grid</h2>
+  <p>Transmission lines (66–765 kV) and substations come from OpenStreetMap, read from the Overture Maps <code>base/infrastructure</code> release of October 2026 by <code>pipeline/build_grid.py</code>. For each district the script measures the distance from the district's interior point to the nearest ≥66 kV substation and the kilometres of line per 100 km².</p>
+  <div class="formula">Grid score = 0.6 × clamp(1 − distance / 60 km) + 0.4 × clamp(line density / 10 km per 100 km²)</div>
+  <p>OpenStreetMap is uneven across India and many lines carry no voltage tag, so the layer is indicative only.</p></div>
+
+  <div class="card"><h2>8. Agro-climatic conditions</h2>
+  <p>Districts are assigned to the Planning Commission's 15 agro-climatic regions by state and, for states that span regions, by sub-state lists. Reference evapotranspiration uses the Hargreaves radiation formula with district monthly temperature and solar radiation:</p>
+  <div class="formula">ET0 (mm/day) = 0.0135 × (T + 17.8) × Rs / 2.45,   Rs in MJ/m²/day
+Aridity index = annual rain ÷ annual ET0   (UNEP classes)
+Growing period = days in months warmer than 5 °C with rain ≥ 0.5 × ET0, with up to 100 mm stored soil water</div></div>
+
+  <div class="card"><h2>9. Shadow analysis</h2>
+  <p>Rows are treated as infinitely long, so a 2D cross-section across them is exact. The sun position comes from latitude, day of year and solar time. For every point between two rows, and every 10 minutes of the 15th of each month, a ray toward the sun is tested against the panels. Direct light uses a clear-sky beam model; diffuse light is the sky view factor of the point, mixed in at the district's diffuse share from NASA POWER. Months are weighted by monthly GHI. The same rays from points on a module give the row-to-row shading loss. Trackers follow the sun to ±55° without backtracking. The 3D view renders the same geometry with three.js shadow maps.</p></div>
+
+  <div class="card"><h2>10. Limitations</h2>
   <ul>
     <li>District averages hide large differences within a district, especially in hill districts and along coasts.</li>
     <li>NASA POWER solar data is about 100 km resolution and usually reads a few percent below high-resolution products such as Solargis or the Global Solar Atlas.</li>
@@ -72,6 +95,8 @@ export function sourcesHTML() {
     <tr><td>Köppen-Geiger class</td><td>Rubel, Brugger, Haslinger &amp; Auer (2017), <i>Meteorologische Zeitschrift</i> 26, via ${a('https://pypi.org/project/kgcpy/', 'kgcpy')}</td><td>100 arc-seconds, 1986–2010</td></tr>
     <tr><td>Solar irradiance (GHI, DNI, diffuse, PAR)</td><td>${a('https://power.larc.nasa.gov/', 'NASA POWER')} v10, CERES SYN1deg climatology (${a('https://registry.opendata.aws/nasa-power/', 'AWS Open Data')})</td><td>1°, 2001–2020</td></tr>
     <tr><td>Temperature, rainfall, humidity, wind, frost</td><td>NASA POWER v10, MERRA-2 climatology</td><td>0.5° × 0.625°, 2001–2020</td></tr>
+    <tr><td>Power grid (lines, substations)</td><td>${a('https://www.openstreetmap.org/', 'OpenStreetMap')} contributors via ${a('https://docs.overturemaps.org/', 'Overture Maps')} base/infrastructure (ODbL)</td><td>Release 2026-10-21</td></tr>
+    <tr><td>Agro-climatic regions</td><td>Planning Commission (1989), Agro-Climatic Regional Planning</td><td>15 regions</td></tr>
     <tr><td>Land cover (cropland share)</td><td>${a('https://esa-worldcover.org/', 'ESA WorldCover 2021 v200')}</td><td>10 m, read at about 300 m</td></tr>
   </tbody></table></div></div>
 
@@ -94,6 +119,8 @@ export function sourcesHTML() {
     <li>Barron-Gafford, G.A. et al. (2019). Agrivoltaics provide mutual benefits across the food–energy–water nexus in drylands. <i>Nature Sustainability</i> 2, 848–855.</li>
     <li>Weselek, A. et al. (2019). Agrophotovoltaic systems: applications, challenges, and opportunities. A review. <i>Agronomy for Sustainable Development</i> 39, 35.</li>
     <li>Laub, M. et al. (2022). Contrasting yield responses at varying levels of shade suggest different suitability of crops for dual land-use systems: a meta-analysis. <i>Agronomy for Sustainable Development</i> 42, 51.</li>
+    <li>Hargreaves, G.H. (1975). Moisture availability and crop production. <i>Transactions of the ASAE</i> 18, 980–984.</li>
+    <li>Marion, B. et al. (2017). A practical irradiance model for bifacial PV modules. <i>IEEE PVSC</i>.</li>
     <li>Fraunhofer ISE (2024). <i>Agrivoltaics: Opportunities for Agriculture and the Energy Transition</i> (guideline).</li>
   </ul></div>
   <p class="footer-note">Built as an open screening tool. Numbers are indicative; check site conditions before investing.</p>`;

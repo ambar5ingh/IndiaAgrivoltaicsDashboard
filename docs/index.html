@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
 <script src="vendor/leaflet/leaflet.js"></script>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.min.js" } }</script>
 </head>
 <body>
 <div id="loading" class="loading">
@@ -32,6 +33,7 @@
   </a>
   <nav class="main-nav" aria-label="Pages">
     <a href="#/dashboard" data-page="dashboard">Dashboard</a>
+    <a href="#/shadow" data-page="shadow">Shadow analysis</a>
     <a href="#/koppen" data-page="koppen">Köppen climate guide</a>
     <a href="#/method" data-page="method">Methodology</a>
     <a href="#/sources" data-page="sources">Data &amp; sources</a>
@@ -84,6 +86,11 @@
             <input type="range" id="height" min="2.1" max="6" step="0.1">
           </div>
           <div class="field">
+            <div class="field-head">Module technology <button class="info" data-info="module">i</button></div>
+            <select id="module"></select>
+            <div class="sub" id="module-ex"></div>
+          </div>
+          <div class="field">
             <div class="field-head">Module efficiency <button class="info" data-info="eff">i</button><output id="o-eff"></output></div>
             <input type="range" id="eff" min="18" max="26" step="0.1">
           </div>
@@ -132,6 +139,7 @@
           <div class="field"><div class="field-head">Cropland availability<output id="o-wcrop"></output></div><input type="range" id="wcrop" min="0" max="100" step="5"></div>
           <div class="field"><div class="field-head">Shade co-benefit (climate)<output id="o-wcobenefit"></output></div><input type="range" id="wcobenefit" min="0" max="100" step="5"></div>
           <div class="field"><div class="field-head">Water stress<output id="o-wwater"></output></div><input type="range" id="wwater" min="0" max="100" step="5"></div>
+          <div class="field"><div class="field-head">Grid access <button class="info" data-info="grid">i</button><output id="o-wgrid"></output></div><input type="range" id="wgrid" min="0" max="100" step="5"></div>
           <button class="btn-ghost" id="btn-reset">Reset to scenario</button>
         </section>
       </div>
@@ -159,6 +167,8 @@
     <div class="map-tools-wrap" style="flex:1;min-height:0;display:flex;flex-direction:column">
       <div id="map" aria-label="Map of Indian districts"></div>
       <div class="map-tools">
+        <button id="btn-grid" title="Show transmission lines and substations">Power grid: off</button>
+        <button id="btn-graticule" title="Show latitude and longitude lines">Lat/long grid: off</button>
         <button id="btn-basemap" title="Show or hide the street basemap">Basemap: off</button>
         <button id="btn-fit" title="Zoom to the current selection">Reset view</button>
       </div>
@@ -166,6 +176,30 @@
     <div class="map-legend" id="legend"></div>
     <div class="map-tip" id="tip" hidden></div>
   </section>
+</main>
+
+<!-- ============================================================ SHADOW -->
+<main id="page-shadow" class="page page-scroll">
+  <div class="page-wrap wide">
+    <div class="hero hero-sm">
+      <h1 class="hero-title">Shadow analysis: <span class="gradient-text">panels and crops</span></h1>
+      <p class="hero-sub">Sun path, shadows and light under the array for the selected district and the design set in Scenario &amp; levers. The 2D cross-section and the 3D view use the same geometry; the annual figures integrate 12 representative days.</p>
+    </div>
+    <div class="sh-grid">
+      <aside class="card sh-controls" id="sh-controls"></aside>
+      <div class="sh-main">
+        <div class="kpis sh-kpis" id="sh-kpis"></div>
+        <div class="card"><h2>2D cross-section <button class="info" data-info="shadow2d">i</button></h2><div id="sh-2d"></div></div>
+        <div class="card"><h2>3D view <button class="info" data-info="shadow3d">i</button></h2>
+          <p class="hint" style="margin:-4px 0 8px">Drag to orbit, scroll to zoom. Shadows move with the time slider.</p>
+          <div id="sh-3d" class="sh-3d"></div></div>
+        <div class="sh-two">
+          <div class="card"><h2>Crop side: light across the row <button class="info" data-info="shadow_ground">i</button></h2><div id="sh-profile"></div></div>
+          <div class="card"><h2>By month <button class="info" data-info="shadow_month">i</button></h2><div id="sh-month"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <!-- ============================================================ KÖPPEN GUIDE -->
