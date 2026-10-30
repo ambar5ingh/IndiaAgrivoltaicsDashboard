@@ -100,8 +100,8 @@ def band(v):
 lines["b"] = [band(v) for v in lines.kv]
 subs["b"] = [band(v) for v in subs.kv]
 
-# web layers: >= 66 kV lines (and unknown-voltage transmission lines) merged per voltage band
-web = lines[(lines.b >= 66) | (lines.b == 0)]
+# web layers: lines merged per voltage band (33 kV and up, plus unknown-voltage transmission lines)
+web = lines  # all bands incl. 33 kV; each band is a separate feature the map can toggle
 feats = []
 for b, grp in web.groupby("b"):
     merged = shapely.line_merge(shapely.union_all(grp.geometry.values))

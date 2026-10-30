@@ -60,7 +60,7 @@ Project IRR        = rate at which the 25-year NPV is zero (unlevered, pre-tax)
 IRR incl. crops    = same, adding (relative crop yield − 1) × crop margin ÷ capacity density each year</div></div>
 
   <div class="card"><h2>7. Power grid</h2>
-  <p>Transmission lines (66–765 kV) and substations come from OpenStreetMap, read from the Overture Maps <code>base/infrastructure</code> release of October 2026 by <code>pipeline/build_grid.py</code>. For each district the script measures the distance from the district's interior point to the nearest ≥66 kV substation and the kilometres of line per 100 km².</p>
+  <p>Transmission and sub-transmission lines (33–765 kV) and substations come from OpenStreetMap, read from the Overture Maps <code>base/infrastructure</code> release of October 2026 by <code>pipeline/build_grid.py</code>. For each district the script measures the distance from the district's interior point to the nearest ≥66 kV substation and the kilometres of line per 100 km².</p>
   <div class="formula">Grid score = 0.6 × clamp(1 − distance / 60 km) + 0.4 × clamp(line density / 10 km per 100 km²)</div>
   <p>OpenStreetMap is uneven across India and many lines carry no voltage tag, so the layer is indicative only.</p></div>
 

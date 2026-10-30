@@ -213,6 +213,7 @@ function buildControls() {
   $('#btn-basemap').onclick = toggleBasemap;
   $('#btn-grid').onclick = togglePowerGrid;
   $('#btn-graticule').onclick = toggleGraticule;
+  $('#legend').addEventListener('click', e => { const b = e.target.closest('[data-kv]'); if (b) toggleGridBand(b.dataset.kv); });
   $('#btn-share').onclick = async () => {
     const u = shareURL();
     try { await navigator.clipboard.writeText(u); flash('#btn-share', 'Copied'); } catch (e) { prompt('Copy this link', u); }
@@ -680,14 +681,19 @@ function buildStatic() {
 
 
 // ---------------------------------------------------------------- overlays: power grid and lat/long graticule
-const KV_COLORS = { 765: '#7a0177', 400: '#c51b8a', 220: '#f768a1', 132: '#1f3663', 66: '#5b8fd1', 33: '#9ecae1', 0: '#8c8c8c' };
-let gridLayer = null, gridLoading = false, gratLayer = null;
+const KV_COLORS = { 765: '#7a0177', 400: '#c51b8a', 220: '#f768a1', 132: '#1f3663', 66: '#5b8fd1', 33: '#e07b39', 0: '#8c8c8c' };
+const KV_BANDS = [765, 400, 220, 132, 66, 33, 0];
+let gridLayer = null, gridLoading = false, gratLayer = null, bandLayers = {}, subLayers = null;
+const gridOn = { 765: true, 400: true, 220: true, 132: true, 66: true, 33: true, 0: true, subs: true };
 function overlayLegend() {
   let h = '';
   if (gridLayer && map.hasLayer(gridLayer)) {
-    h += `<div class="t" style="margin-top:8px">Power grid (OpenStreetMap) <button class="info" data-info="grid">i</button></div><div class="cat-legend">` +
-      [765, 400, 220, 132, 66, 0].map(b => `<div><span class="sw" style="background:${KV_COLORS[b]};height:4px;border-radius:2px"></span>${b ? b + ' kV' : 'Voltage not tagged'}</div>`).join('') +
-      `<div class="span"><span class="sw" style="background:#fff;border:2px solid #13322c;border-radius:50%"></span>Substation ≥220 kV<br>(66–132 kV appear when zoomed in)</div></div>`;
+    const tog = k => `<button class="kv-tog${gridOn[k] ? ' on' : ''}" data-kv="${k}" aria-pressed="${gridOn[k]}">${gridOn[k] ? 'On' : 'Off'}</button>`;
+    h += `<div class="t" style="margin-top:8px">Power grid (OpenStreetMap) <button class="info" data-info="grid">i</button>
+      <span class="kv-all"><button data-kv="all">All</button><button data-kv="none">None</button></span></div><div class="cat-legend kv-legend">` +
+      KV_BANDS.map(b => `<div class="${gridOn[b] ? '' : 'off'}"><span class="sw" style="background:${KV_COLORS[b]};height:4px;border-radius:2px"></span><span class="kv-name">${b ? b + ' kV' : 'Not tagged'}</span>${tog(b)}</div>`).join('') +
+      `<div class="${gridOn.subs ? '' : 'off'}"><span class="sw" style="background:#fff;border:2px solid #13322c;border-radius:50%"></span><span class="kv-name">Substations</span>${tog('subs')}</div></div>
+      <div class="kv-note">Substations of 220 kV and up show at any zoom; 66–132 kV ones appear when zoomed in. Each switch also hides that voltage's substations.</div>`;
   }
   return h;
 }
@@ -701,22 +707,38 @@ async function togglePowerGrid() {
     try {
       const [lines, subs] = await Promise.all([fetch('data/grid_lines.geojson').then(r => r.json()), fetch('data/substations.json').then(r => r.json())]);
       const rend = L.canvas({ padding: 0.3 });
-      const order = { 0: 0, 66: 1, 132: 2, 220: 3, 400: 4, 765: 5 };
-      lines.features.sort((a, b) => order[a.properties.b] - order[b.properties.b]);
-      const lineLayer = L.geoJSON(lines, { renderer: rend, interactive: false,
-        style: f => ({ color: KV_COLORS[f.properties.b], weight: f.properties.b >= 400 ? 2.2 : f.properties.b >= 220 ? 1.6 : 1, opacity: 0.9 }) });
+      bandLayers = {};
+      for (const f of lines.features) {
+        const b = f.properties.b;
+        bandLayers[b] = L.geoJSON(f, { renderer: rend, interactive: false,
+          style: { color: KV_COLORS[b], weight: b >= 400 ? 2.2 : b >= 220 ? 1.6 : b >= 66 ? 1 : 0.9, opacity: 0.9 } });
+      }
       const dot = ([x, y, b, n]) => L.circleMarker([y, x], { renderer: rend, radius: b >= 400 ? 3 : b >= 220 ? 2.2 : 1.4,
         color: '#13322c', weight: b >= 220 ? 1 : 0.6, fillColor: '#ffffff', fillOpacity: 1 }).bindTooltip(`${n ? esc(n) + ' · ' : ''}${b} kV substation`);
-      const subHV = L.layerGroup(subs.filter(s => s[2] >= 220).map(dot));
-      const subLV = L.layerGroup(subs.filter(s => s[2] < 220).map(dot)); // 66 and 132 kV, shown once zoomed in
-      gridLayer = L.layerGroup([lineLayer, subHV]).addTo(map);
-      const zoomSubs = () => { const on = map.hasLayer(gridLayer) && map.getZoom() >= 6.5; if (on && !gridLayer.hasLayer(subLV)) gridLayer.addLayer(subLV); else if (!on && gridLayer.hasLayer(subLV)) gridLayer.removeLayer(subLV); };
-      map.on('zoomend', zoomSubs); zoomSubs();
+      subLayers = {};
+      for (const b of KV_BANDS) { const ss = subs.filter(s => s[2] === b); if (ss.length) subLayers[b] = L.layerGroup(ss.map(dot)); }
+      gridLayer = L.layerGroup().addTo(map);
+      syncGridBands();
+      map.on('zoomend', syncGridBands);
     } catch (e) { console.error('power grid', e); btn.textContent = 'Power grid: failed'; gridLoading = false; return; }
     gridLoading = false;
   }
   btn.textContent = 'Power grid: ' + (map.hasLayer(gridLayer) ? 'on' : 'off');
   renderLegend();
+}
+// Show the voltage bands that are switched on. Higher voltages are drawn last so they sit on top;
+// 66 and 132 kV substations only appear once zoomed in.
+function syncGridBands() {
+  if (!gridLayer) return;
+  gridLayer.clearLayers();
+  const zoomed = map.getZoom() >= 6.5;
+  for (const b of [...KV_BANDS].reverse()) if (gridOn[b] && bandLayers[b]) gridLayer.addLayer(bandLayers[b]);
+  if (gridOn.subs) for (const b of [...KV_BANDS].reverse()) if (gridOn[b] && subLayers[b] && (b >= 220 || zoomed)) gridLayer.addLayer(subLayers[b]);
+}
+function toggleGridBand(k) {
+  if (k === 'all' || k === 'none') Object.keys(gridOn).forEach(x => gridOn[x] = k === 'all');
+  else gridOn[k] = !gridOn[k];
+  syncGridBands(); renderLegend();
 }
 function toggleGraticule() {
   if (!gratLayer) {
