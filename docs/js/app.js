@@ -488,12 +488,12 @@ function renderDistrict() {
       ${mini('Wind 50 m', fmt(d.ws50, 1), 'm/s', 'wind')}
       ${mini('Humidity', fmt(d.rh), '%')}
     </div>
-    <p class="hint" style="margin:0 0 6px">Averages for 2001–2025 (NASA POWER: MERRA-2 for weather, CERES for sunlight).</p>
+    <p class="hint" style="margin:0 0 6px">Averages for 2001–2020 (NASA POWER: MERRA-2 for weather, CERES for sunlight).</p>
     ${barChart(d.ghim, 'Monthly GHI', 'kWh/m²/day', 2, '#f6b31f')}
     ${barChart(d.rm, 'Monthly rainfall', 'mm', 0, '#5b8fd1')}
     ${lineChart(d.tm, 'Monthly mean temperature', '°C', 1)}
     ${d.wsm ? barChart(d.wsm, 'Monthly wind speed at 10 m', 'm/s', 1, '#78c8a5') : ''}
-    <div class="chart-title" style="margin-top:10px"><span>Year by year, 2001–2025${info('years')}</span>
+    <div class="chart-title" style="margin-top:10px"><span>Year by year, 2001–2020${info('years')}</span>
       <span class="yr-tabs">${Object.entries(YEAR_VARS).map(([k, v]) => `<button class="yr-tab${k === S.yearVar ? ' on' : ''}" data-yv="${k}">${v[0]}</button>`).join('')}</span></div>
     <div id="d-years"><p class="hint">Loading…</p></div>
   </section>
@@ -601,7 +601,7 @@ function renderDistrict() {
   renderYears(d);
 }
 
-// ---------------------------------------------------------------- year-by-year climate (2001–2025), loaded on first use
+// ---------------------------------------------------------------- year-by-year climate (2001–2020), loaded on first use
 const YEAR_VARS = { g: ['Sun', 'GHI', 'kWh/m²/day', 2, '#f6b31f'], r: ['Rain', 'Rainfall', 'mm', 0, '#5b8fd1'], t: ['Temp', 'Mean temperature', '°C', 1, '#13322c'], w: ['Wind', 'Wind speed at 10 m', 'm/s', 2, '#78c8a5'] };
 let YEARS = null, yearsLoading = null;
 async function renderYears(d) {
@@ -639,7 +639,7 @@ function yearChart(vals, years, title, unit, dec, color) {
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title} by year"><line x1="0" x2="${W}" y1="${H - pad.b}" y2="${H - pad.b}" stroke="#e6dec8"/>${bars}
     <line x1="${pad.l}" x2="${W - pad.r}" y1="${py(mean)}" y2="${py(mean)}" stroke="#94a3b8" stroke-dasharray="3 3"/>
     <line x1="${pad.l + bw / 2}" x2="${W - pad.r - bw / 2}" y1="${t0}" y2="${t1}" stroke="#c0564b" stroke-width="1.5"/></svg>
-    <div class="hint" style="margin-top:2px">${esc(title)}: 25-year mean ${fmt(mean, dec)} ${unit} (dashed); trend ${slope * 10 >= 0 ? '+' : '−'}${fmt(Math.abs(slope * 10), dec + 1)} ${unit} per decade (red); ${years[n - 1]} ${fmt(vals[n - 1], dec)} ${unit}.</div>`;
+    <div class="hint" style="margin-top:2px">${esc(title)}: ${n}-year mean ${fmt(mean, dec)} ${unit} (dashed); trend ${slope * 10 >= 0 ? '+' : '−'}${fmt(Math.abs(slope * 10), dec + 1)} ${unit} per decade (red); ${years[n - 1]} ${fmt(vals[n - 1], dec)} ${unit}.</div>`;
 }
 
 function barChart(vals, title, unit, dec, color) {

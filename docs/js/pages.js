@@ -13,15 +13,15 @@ export function methodHTML({ CONFIGS, CROPS, MODULES, REF_GCR, GRID_EF }) {
   <p>For every district the build script (<code>pipeline/build_data.py</code>) samples about 300 m grid cells inside the boundary and averages:</p>
   <ul>
     <li><b>Köppen-Geiger class</b>: area shares from the 1986–2010 Köppen-Geiger map (Rubel et al. 2017, via the <code>kgcpy</code> package). The class covering the largest share is the district's class. Where the monsoon makes both the dry-summer (s) and dry-winter (w) rules hold, which the Rubel/Kottek rules settle in favour of "s", the class is set to dry-winter when the warm half-year is wetter. That is the Peel et al. (2007) precedence used by Beck et al. (2018). A second class is computed from NASA POWER monthly temperature and rainfall as a cross-check; the two agree in about 80% of districts.</li>
-    <li><b>Solar resource</b>: monthly and annual GHI and the annual diffuse share, from NASA POWER v10 monthly CERES SYN1deg data averaged over January 2001 to December 2025. GHI drives the energy model and the monthly GHI chart; the diffuse share is used in the shadow analysis.</li>
-    <li><b>Climate</b>: from NASA POWER v10 monthly MERRA-2 data (the NASA reanalysis that IDEEA also uses), averaged over January 2001 to December 2025. What the dashboard uses:
+    <li><b>Solar resource</b>: monthly and annual GHI and the annual diffuse share, from NASA POWER v10 monthly CERES SYN1deg data averaged over January 2001 to December 2020. GHI drives the energy model and the monthly GHI chart; the diffuse share is used in the shadow analysis.</li>
+    <li><b>Climate</b>: from NASA POWER v10 monthly MERRA-2 data (0.5° × 0.625°), averaged over January 2001 to December 2020. What the dashboard uses:
       <ul>
         <li>monthly mean temperature and monthly rainfall: the climate charts, the Köppen cross-check, aridity, growing period and water deficit;</li>
-        <li>hot months: the number of calendar months in which the highest daily maximum temperature reached in 2001–2025 is at least 35 °C (map layer, risk notes and the shade co-benefit);</li>
+        <li>hot months: the number of calendar months in which the highest daily maximum temperature reached in 2001–2020 is at least 35 °C (map layer, risk notes and the shade co-benefit);</li>
         <li>wind speed: annual and monthly wind at 10 m and annual wind at 50 m are shown; annual wind at 2 m sets module cooling in the energy model;</li>
         <li>relative humidity (annual) in the district panel, and frost days, which only raise a risk note above 5 days a year.</li>
       </ul>
-      Year-by-year values (annual mean GHI, total rainfall, mean temperature and 10 m wind for each year 2001–2025) feed the year-by-year chart in the district panel.</li>
+      Year-by-year values (annual mean GHI, total rainfall, mean temperature and 10 m wind for each year 2001–2020) feed the year-by-year chart in the district panel.</li>
     <li><b>Agricultural land</b>: cropland share in 2024 and 2019 from the UMD GLAD annual cropland maps (Potapov et al. 2022 method, 30 m, averaged onto the 300 m cells). <i>Compact farmland</i> counts only the cropland in 300 m cells that are at least half cropland, which leaves out scattered plots, homestead gardens and field edges where an agrivoltaic array is hard to lay out.</li>
     <li><b>Land cover</b>: shares of cropland, trees, grass, built-up and other classes from ESA WorldCover 2021.</li>
   </ul></div>
@@ -101,7 +101,7 @@ export function sourcesHTML() {
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Source</th><th>Resolution and period</th></tr></thead><tbody>
     <tr><td>District boundaries (790)</td><td>${a('https://github.com/datta07/INDIAN-SHAPEFILES', 'datta07/INDIAN-SHAPEFILES')}, INDIA_DISTRICTS.geojson</td><td>Current districts, simplified to about 1 km for the web</td></tr>
     <tr><td>Köppen-Geiger class</td><td>Rubel, Brugger, Haslinger &amp; Auer (2017), <i>Meteorologische Zeitschrift</i> 26, via ${a('https://pypi.org/project/kgcpy/', 'kgcpy')}</td><td>100 arc-seconds, 1986–2010</td></tr>
-    <tr><td>Solar irradiance (GHI, diffuse share)</td><td>${a('https://power.larc.nasa.gov/', 'NASA POWER')} v10, CERES SYN1deg monthly (${a('https://registry.opendata.aws/nasa-power/', 'AWS Open Data')})</td><td>1°, 2001–2025</td></tr>
+    <tr><td>Solar irradiance (GHI, diffuse share)</td><td>${a('https://power.larc.nasa.gov/', 'NASA POWER')} v10, CERES SYN1deg monthly (${a('https://registry.opendata.aws/nasa-power/', 'AWS Open Data')})</td><td>1°, 2001–2020</td></tr>
     <tr><td>Temperature, rainfall, humidity, wind (2, 10, 50 m), frost days</td><td>NASA POWER v10, MERRA-2 monthly</td><td>0.5° × 0.625°, 2001–2020</td></tr>
     <tr><td>Agricultural land (cropland 2024 and 2019)</td><td>${a('https://glad.umd.edu/dataset/croplands', 'UMD GLAD')} annual cropland maps; Potapov, P. et al. (2022) <i>Nature Food</i> 3, 19–28</td><td>30 m, averaged to about 300 m</td></tr>
     <tr><td>Power grid (lines, substations)</td><td>${a('https://www.openstreetmap.org/', 'OpenStreetMap')} contributors via ${a('https://docs.overturemaps.org/', 'Overture Maps')} base/infrastructure (ODbL)</td><td>Release 2026-10-21</td></tr>
