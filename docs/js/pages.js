@@ -13,8 +13,9 @@ export function methodHTML({ CONFIGS, CROPS, MODULES, REF_GCR, GRID_EF }) {
   <p>For every district the build script (<code>pipeline/build_data.py</code>) samples about 300 m grid cells inside the boundary and averages:</p>
   <ul>
     <li><b>Köppen-Geiger class</b>: area shares from the 1986–2010 Köppen-Geiger map (Rubel et al. 2017, via the <code>kgcpy</code> package). The class covering the largest share is the district's class. Where the monsoon makes both the dry-summer (s) and dry-winter (w) rules hold, which the Rubel/Kottek rules settle in favour of "s", the class is set to dry-winter when the warm half-year is wetter. That is the Peel et al. (2007) precedence used by Beck et al. (2018). A second class is computed from NASA POWER monthly temperature and rainfall as a cross-check; the two agree in about 80% of districts.</li>
-    <li><b>Solar resource</b>: GHI, DNI, diffuse and PAR from NASA POWER v10 climatology (CERES SYN1deg, 2001–2020).</li>
-    <li><b>Climate</b>: monthly mean, maximum and minimum temperature, rainfall, humidity, wind and frost days from NASA POWER (MERRA-2, 2001–2020).</li>
+    <li><b>Solar resource</b>: GHI, DNI, diffuse and PAR from NASA POWER v10 monthly CERES SYN1deg data. The build averages every month from January 2001 to December 2025 (25 years).</li>
+    <li><b>Climate</b>: monthly mean, maximum and minimum temperature, rainfall, humidity, wind at 2, 10 and 50 m and frost days from NASA POWER v10 monthly MERRA-2 data, January 2001 to December 2025. This is the same NASA MERRA-2 reanalysis that IDEEA and the <code>merra2ools</code> package use; POWER publishes it monthly up to the latest complete month. Monthly maximum and minimum temperatures are the extremes over the 25 years, as in POWER's own climatology. Annual values for each year 2001–2025 are saved for the year-by-year charts.</li>
+    <li><b>Agricultural land</b>: cropland share in 2024 and 2019 from the UMD GLAD annual cropland maps (Potapov et al. 2022 method, 30 m, averaged onto the 300 m cells). <i>Compact farmland</i> counts only the cropland in 300 m cells that are at least half cropland, which leaves out scattered plots, homestead gardens and field edges where an agrivoltaic array is hard to lay out.</li>
     <li><b>Land cover</b>: shares of cropland, trees, grass, built-up and other classes from ESA WorldCover 2021.</li>
   </ul></div>
 
@@ -45,10 +46,10 @@ LER = relative crop yield + electricity term</div>
 
   <div class="card"><h2>5. Suitability and scenarios</h2>
   <div class="formula">Suitability = 100 × Σ wᵢ fᵢ / Σ wᵢ
-f_solar = (GHI − 4.0) / 1.8      f_cropland = cropland share / 0.75
+f_solar = (GHI − 4.0) / 1.8      f_cropland = cropland share (GLAD 2024, or WorldCover 2021 if chosen) / 0.75
 f_cobenefit = β / 0.6           f_water = aridity
 × 0.4 for continental and alpine classes, × 0.7 where trees cover more than 60%</div>
-  <p>A scenario converts a share of the cropland of every district at or above the suitability threshold. Capacity = cropland × adoption × density. Generation = capacity × specific yield. Investment = capacity × capex × (1 + configuration premium). CO₂ avoided = generation × ${GRID_EF} tCO₂/MWh.</p>
+  <p>A scenario converts a share of the agricultural land base of every district at or above the suitability threshold. The land base is compact farmland in 2024 by default (GLAD), and can be switched to all GLAD 2024 cropland or ESA WorldCover 2021 cropland under Scenario. Capacity = land base × adoption × density. Generation = capacity × specific yield. Investment = capacity × capex × (1 + configuration premium). CO₂ avoided = generation × ${GRID_EF} tCO₂/MWh.</p>
   <h3>Economics</h3>
   <div class="formula">LCOE (₹/kWh) = (capex × CRF + O&amp;M) ÷ annual generation,   CRF = r / (1 − (1 + r)^−25)</div></div>
 
@@ -78,7 +79,7 @@ Growing period = days in months warmer than 5 °C with rain ≥ 0.5 × ET0, with
     <li>District averages hide large differences within a district, especially in hill districts and along coasts.</li>
     <li>NASA POWER solar data is about 100 km resolution and usually reads a few percent below high-resolution products such as Solargis or the Global Solar Atlas.</li>
     <li>Crop responses are simplified linear screening relations. Real responses depend on variety, season, irrigation and how light is spread under the array.</li>
-    <li>ESA WorldCover cropland includes fallow and seasonally cropped land, and does not tell irrigated from rain-fed land.</li>
+    <li>Satellite cropland maps (GLAD, ESA WorldCover) include fallow and seasonally cropped land and do not tell irrigated from rain-fed land. They differ from the official Land Use Statistics (net sown area) of the Directorate of Economics and Statistics, which are not available as open, machine-readable district data for recent years.</li>
     <li>Not modelled: grid connection and substation capacity, land tenure and leasing, slope, flood zones, protected areas.</li>
     <li>District boundaries follow the source shapefile, including areas administered by other countries that India claims.</li>
   </ul></div>`;
@@ -93,11 +94,12 @@ export function sourcesHTML() {
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Data</th><th>Source</th><th>Resolution and period</th></tr></thead><tbody>
     <tr><td>District boundaries (790)</td><td>${a('https://github.com/datta07/INDIAN-SHAPEFILES', 'datta07/INDIAN-SHAPEFILES')}, INDIA_DISTRICTS.geojson</td><td>Current districts, simplified to about 1 km for the web</td></tr>
     <tr><td>Köppen-Geiger class</td><td>Rubel, Brugger, Haslinger &amp; Auer (2017), <i>Meteorologische Zeitschrift</i> 26, via ${a('https://pypi.org/project/kgcpy/', 'kgcpy')}</td><td>100 arc-seconds, 1986–2010</td></tr>
-    <tr><td>Solar irradiance (GHI, DNI, diffuse, PAR)</td><td>${a('https://power.larc.nasa.gov/', 'NASA POWER')} v10, CERES SYN1deg climatology (${a('https://registry.opendata.aws/nasa-power/', 'AWS Open Data')})</td><td>1°, 2001–2020</td></tr>
-    <tr><td>Temperature, rainfall, humidity, wind, frost</td><td>NASA POWER v10, MERRA-2 climatology</td><td>0.5° × 0.625°, 2001–2020</td></tr>
+    <tr><td>Solar irradiance (GHI, DNI, diffuse, PAR)</td><td>${a('https://power.larc.nasa.gov/', 'NASA POWER')} v10, CERES SYN1deg monthly (${a('https://registry.opendata.aws/nasa-power/', 'AWS Open Data')})</td><td>1°, 2001–2025</td></tr>
+    <tr><td>Temperature, rainfall, humidity, wind (2, 10, 50 m), frost</td><td>NASA POWER v10, ${a('https://gmao.gsfc.nasa.gov/reanalysis/MERRA-2/', 'MERRA-2')} monthly; same reanalysis as ${a('https://github.com/wri-india/IDEEA-public', 'IDEEA')} / ${a('https://github.com/optimal2050/merra2ools', 'merra2ools')}</td><td>0.5° × 0.625°, 2001–2025</td></tr>
+    <tr><td>Agricultural land (cropland 2024 and 2019)</td><td>${a('https://glad.umd.edu/dataset/croplands', 'UMD GLAD')} annual cropland maps; Potapov, P. et al. (2022) <i>Nature Food</i> 3, 19–28</td><td>30 m, averaged to about 300 m</td></tr>
     <tr><td>Power grid (lines, substations)</td><td>${a('https://www.openstreetmap.org/', 'OpenStreetMap')} contributors via ${a('https://docs.overturemaps.org/', 'Overture Maps')} base/infrastructure (ODbL)</td><td>Release 2026-10-21</td></tr>
     <tr><td>Agro-climatic regions</td><td>Planning Commission (1989), Agro-Climatic Regional Planning</td><td>15 regions</td></tr>
-    <tr><td>Land cover (cropland share)</td><td>${a('https://esa-worldcover.org/', 'ESA WorldCover 2021 v200')}</td><td>10 m, read at about 300 m</td></tr>
+    <tr><td>Land cover (all classes)</td><td>${a('https://esa-worldcover.org/', 'ESA WorldCover 2021 v200')}</td><td>10 m, read at about 300 m</td></tr>
   </tbody></table></div></div>
 
   <div class="card"><h2>Agrivoltaics in India: research behind the defaults</h2>
@@ -119,6 +121,8 @@ export function sourcesHTML() {
     <li>Barron-Gafford, G.A. et al. (2019). Agrivoltaics provide mutual benefits across the food–energy–water nexus in drylands. <i>Nature Sustainability</i> 2, 848–855.</li>
     <li>Weselek, A. et al. (2019). Agrophotovoltaic systems: applications, challenges, and opportunities. A review. <i>Agronomy for Sustainable Development</i> 39, 35.</li>
     <li>Laub, M. et al. (2022). Contrasting yield responses at varying levels of shade suggest different suitability of crops for dual land-use systems: a meta-analysis. <i>Agronomy for Sustainable Development</i> 42, 51.</li>
+    <li>Potapov, P. et al. (2022). Global maps of cropland extent and change show accelerated cropland expansion in the twenty-first century. <i>Nature Food</i> 3, 19–28.</li>
+    <li>Gelaro, R. et al. (2017). The Modern-Era Retrospective Analysis for Research and Applications, Version 2 (MERRA-2). <i>Journal of Climate</i> 30, 5419–5454.</li>
     <li>Hargreaves, G.H. (1975). Moisture availability and crop production. <i>Transactions of the ASAE</i> 18, 980–984.</li>
     <li>Marion, B. et al. (2017). A practical irradiance model for bifacial PV modules. <i>IEEE PVSC</i>.</li>
     <li>Fraunhofer ISE (2024). <i>Agrivoltaics: Opportunities for Agriculture and the Energy Transition</i> (guideline).</li>

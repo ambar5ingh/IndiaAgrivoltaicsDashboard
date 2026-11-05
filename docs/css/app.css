@@ -247,6 +247,9 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .notes li { margin-bottom: 3px; }
 .chart { width: 100%; height: auto; display: block; }
 .chart-title { font-size: .72rem; font-weight: 700; color: var(--muted); margin: 8px 0 2px; display: flex; justify-content: space-between; }
+.yr-tabs { display: inline-flex; gap: 3px; }
+.yr-tab { font: inherit; font-size: .66rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted); cursor: pointer; }
+.yr-tab.on { background: #13322c; border-color: #13322c; color: #fff; }
 .meter { height: 8px; background: #efe9d8; border-radius: 4px; overflow: hidden; margin-top: 4px; }
 .meter > div { height: 100%; background: var(--dark-green); border-radius: 4px; }
 .ler-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 2px; margin: 6px 0 4px; background: #efe9d8; position: relative; }

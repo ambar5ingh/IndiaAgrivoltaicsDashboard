@@ -3,10 +3,11 @@
 Inputs (all fetched over the network, nothing hand-entered):
   - District boundaries: datta07/INDIAN-SHAPEFILES INDIA_DISTRICTS.geojson
   - Köppen-Geiger: kgcpy (Rubel et al. 2017, 1986-2010, 100 arc-second grid)
-  - Climate: NASA POWER v10 climatology (MERRA-2 0.5x0.625 deg, 2001-2020)
-  - Solar: NASA POWER v10 climatology (CERES SYN1deg 1 deg, 2001-2020)
+  - Climate: NASA POWER v10 monthly MERRA-2 (0.5x0.625 deg), climatology computed here for 2001-2025
+  - Solar: NASA POWER v10 monthly CERES SYN1deg (1 deg), climatology computed here for 2001-2025
   - Land cover: ESA WorldCover 2021 v200 (read at ~300 m from COG overviews)
-Outputs: site/data/districts.geojson (simplified) and site/data/districts.json
+  - Agricultural land: UMD GLAD annual cropland 2024 and 2019 (Potapov et al.; 30 m, averaged to ~300 m)
+Outputs: docs/data/districts.geojson (simplified), districts.json and climate_years.json
 """
 import json, math, os, sys
 import numpy as np
@@ -114,6 +115,47 @@ lc = {}
 for code, nm in lc_codes.items():
     lc[nm] = np.bincount(pid, weights=(pwc == code).astype(float), minlength=len(g) + 1) / np.maximum(npx, 1)
 
+# ---------------------------------------------------------------- GLAD annual cropland (latest: 2024)
+# Potapov et al. (2022, Nature Food) cropland method, annual 30 m maps 2015-2024 from UMD GLAD.
+# Each 10x10 degree tile is 0 (other) / 100 (cropland); averaging onto the ~300 m id grid gives cropland %.
+from rasterio.warp import reproject
+GLAD_URL = "https://storage.googleapis.com/earthenginepartners-hansen/Annual_Layers_2015_2024/cropland/{y}/{t}.tif"
+
+def glad_cropland(year):
+    path = os.path.join(CACHE, f"glad_cropland_{year}.npy")
+    if os.path.exists(path):
+        return np.load(path)
+    acc = np.full((ny, nx), 255, dtype=np.uint8)
+    for top in (10, 20, 30, 40):
+        for left in (60, 70, 80, 90):
+            t = f"{top:02d}N_{left:03d}E"
+            local = os.path.join(CACHE, "glad", f"{year}_{t}.tif")
+            src_path = local if os.path.exists(local) else GLAD_URL.format(y=year, t=t)
+            try:
+                src = rasterio.open(src_path)
+            except Exception:
+                continue  # all-ocean tiles do not exist
+            with src:
+                part = np.full((ny, nx), 255, dtype=np.uint8)
+                reproject(rasterio.band(src, 1), part, src_transform=src.transform, src_crs=src.crs,
+                          dst_transform=tf, dst_crs="EPSG:4326", resampling=Resampling.average,
+                          src_nodata=None, dst_nodata=255, init_dest_nodata=False, num_threads=4)
+            acc = np.where(part != 255, part, acc)
+            print("glad", year, t, flush=True)
+    acc[acc == 255] = 0
+    np.save(path, acc)
+    return acc
+
+def cropland_shares(pct):
+    """District share of cropland, and share in compact farmland (~300 m cells at least half cropland)."""
+    f = pct[rows, cols].astype(float) / 100
+    share = np.bincount(pid, weights=f, minlength=len(g) + 1) / np.maximum(npx, 1)
+    compact = np.bincount(pid, weights=np.where(f >= 0.5, f, 0), minlength=len(g) + 1) / np.maximum(npx, 1)
+    return share, compact
+
+c24, cc24 = cropland_shares(glad_cropland(2024))
+c19, _ = cropland_shares(glad_cropland(2019))
+
 # ---------------------------------------------------------------- Köppen (kgcpy)
 import kgcpy
 kimg = np.array(kgcpy.img)
@@ -131,30 +173,51 @@ def power(ds_url, var_list):
     ds = ds[var_list].sel(lat=slice(S - 1, N + 1), lon=slice(W - 1, E + 1)).load()
     return ds
 
-mer_vars = ["T2M", "T2M_MAX", "T2M_MIN", "PRECTOTCORR", "RH2M", "WS2M", "FROST_DAYS", "EVPTRNS", "GWETROOT"]
-mer = None
-mp = os.path.join(CACHE, "merra.nc")
-if os.path.exists(mp):
-    mer = xr.open_dataset(mp)
-else:
-    ds = xr.open_zarr("s3://nasa-power/merra2/spatial/power_merra2_climatology_spatial_utc.zarr", storage_options={"anon": True})
-    have = [v for v in mer_vars if v in ds]
-    mer = ds[have].sel(lat=slice(S - 1, N + 1), lon=slice(W - 1, E + 1)).load()
-    mer.to_netcdf(mp)
+Y0, Y1 = 2001, 2025  # CERES SYN1deg starts in 2001; MERRA-2 and SYN1deg are complete through 2025
+MONTH_W = np.array([31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]) / 365.25
+# T2M_MAX / T2M_MIN in POWER's climatology product are the extremes over all years; keep that meaning
+EXTREME = {"T2M_MAX": "max", "T2M_MIN": "min"}
+
+def monthly_climatology(url, var_list, cache_name):
+    """12 monthly means over Y0..Y1 plus an annual value (index 12), shaped like POWER's climatology zarr.
+    Also returns the per-year annual means (Y0..Y1) for the year-by-year charts."""
+    cp = os.path.join(CACHE, cache_name)
+    if os.path.exists(cp):
+        mon = xr.open_dataset(cp)
+    else:
+        ds = xr.open_zarr(url, storage_options={"anon": True})
+        have = [v for v in var_list if v in ds]
+        mon = ds[have].sel(lat=slice(S - 1, N + 1), lon=slice(W - 1, E + 1), time=slice(f"{Y0}-01", f"{Y1}-12")).load()
+        mon.to_netcdf(cp)
+    assert mon.sizes["time"] == 12 * (Y1 - Y0 + 1), mon.sizes
+    for v in mon.data_vars:
+        assert bool(np.isfinite(mon[v].values).any(axis=(1, 2)).all()), f"{v}: a month has no data"
+    out = {}
+    wts = xr.DataArray(MONTH_W, dims="month", coords={"month": np.arange(1, 13)})
+    for v in mon.data_vars:
+        grp = mon[v].groupby("time.month")
+        how = EXTREME.get(v, "mean")
+        m12 = getattr(grp, how)("time")
+        ann = m12.max("month") if how == "max" else m12.min("month") if how == "min" else (m12 * wts).sum("month")
+        out[v] = xr.concat([m12, ann.expand_dims(month=[13])], dim="month").rename(month="time")
+    clim_ds = xr.Dataset(out)
+    yearly = {}
+    for v in mon.data_vars:
+        mw = xr.DataArray(np.tile(MONTH_W, Y1 - Y0 + 1), dims="time", coords={"time": mon.time})
+        yearly[v] = (mon[v] * mw).groupby("time.year").sum("time")  # day-weighted annual mean
+    return clim_ds, xr.Dataset(yearly)
+
+mer_vars = ["T2M", "T2M_MAX", "T2M_MIN", "PRECTOTCORR", "RH2M", "WS2M", "WS10M", "WS50M", "FROST_DAYS", "EVPTRNS", "GWETROOT"]
+mer, mer_y = monthly_climatology("s3://nasa-power/merra2/spatial/power_merra2_monthly_spatial_utc.zarr", mer_vars,
+                                 f"merra2_monthly_{Y0}_{Y1}.nc")
 syn_vars = ["ALLSKY_SFC_SW_DWN", "ALLSKY_SFC_SW_DNI", "ALLSKY_SFC_SW_DIFF", "ALLSKY_SFC_PAR_TOT", "ALLSKY_KT", "CLRSKY_SFC_SW_DWN"]
-sp = os.path.join(CACHE, "syn.nc")
-if os.path.exists(sp):
-    syn = xr.open_dataset(sp)
-else:
-    ds = xr.open_zarr("s3://nasa-power/syn1deg/spatial/power_syn1deg_climatology_spatial_utc.zarr", storage_options={"anon": True})
-    have = [v for v in syn_vars if v in ds]
-    syn = ds[have].sel(lat=slice(S - 1, N + 1), lon=slice(W - 1, E + 1)).load()
-    syn.to_netcdf(sp)
+syn, syn_y = monthly_climatology("s3://nasa-power/syn1deg/spatial/power_syn1deg_monthly_spatial_utc.zarr", syn_vars,
+                                 f"syn1deg_monthly_{Y0}_{Y1}.nc")
 print("merra", dict(mer.sizes), list(mer.data_vars), "syn", dict(syn.sizes), list(syn.data_vars))
 print("time coord", mer.time.values[:13])
 
 
-def district_mean(ds, var):
+def district_mean(ds, var):  # noqa: E302
     """Area mean over district pixels using nearest grid cell for each ~300 m pixel. Returns (n+1, T)."""
     da = ds[var]
     lats, lons = da.lat.values, da.lon.values
@@ -176,6 +239,8 @@ def district_mean(ds, var):
 
 clim = {v: district_mean(mer, v) for v in mer.data_vars}
 sol = {v: district_mean(syn, v) for v in syn.data_vars}
+yr = {v: district_mean(mer_y.rename(year="time"), v) for v in ["T2M", "PRECTOTCORR", "WS10M", "WS50M"]}
+yr["GHI"] = district_mean(syn_y.rename(year="time"), "ALLSKY_SFC_SW_DWN")
 
 # ---------------------------------------------------------------- Köppen from POWER (cross-check)
 MONTH_DAYS = np.array([31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31])
@@ -248,9 +313,13 @@ for i, r in g.iterrows():
         rm=[round(float(x)) for x in P],
         rh=round(float(clim["RH2M"][d][12]), 1),
         ws=round(float(clim["WS2M"][d][12]), 2) if "WS2M" in clim else None,
+        ws10=round(float(clim["WS10M"][d][12]), 2),
+        ws50=round(float(clim["WS50M"][d][12]), 2),
+        wsm=[round(float(x), 1) for x in clim["WS10M"][d][:12]],
         frost=round(float(clim["FROST_DAYS"][d][:12].sum()), 1) if "FROST_DAYS" in clim else None,
         gwet=round(float(clim["GWETROOT"][d][12]), 3) if "GWETROOT" in clim else None,
         lc={k: round(float(v[d]), 4) for k, v in lc.items() if v[d] > 0},
+        lu=dict(c24=round(float(c24[d]), 4), cc=round(float(cc24[d]), 4), c19=round(float(c19[d]), 4)),
     )
     recs.append(rec)
 
@@ -262,6 +331,19 @@ def clean(o):
     return o
 with open(os.path.join(OUT, "districts.json"), "w") as f:
     json.dump(clean(recs), f, separators=(",", ":"), allow_nan=False)
+# year-by-year annual values for the district charts (loaded on demand)
+years = {"years": list(range(Y0, Y1 + 1)), "d": {}}
+for r in recs:
+    d = r["id"]
+    years["d"][d] = dict(
+        g=[round(float(x) * 0.024, 2) for x in yr["GHI"][d]],
+        r=[round(float(x) * 365.25) for x in yr["PRECTOTCORR"][d]],
+        t=[round(float(x), 1) for x in yr["T2M"][d]],
+        w=[round(float(x), 2) for x in yr["WS10M"][d]],
+        w50=[round(float(x), 2) for x in yr["WS50M"][d]],
+    )
+with open(os.path.join(OUT, "climate_years.json"), "w") as f:
+    json.dump(clean(years), f, separators=(",", ":"), allow_nan=False)
 
 # simplified geometry for the web map (~1 km tolerance), ids only
 gs = g[["id", "geometry"]].copy()

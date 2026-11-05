@@ -1,5 +1,5 @@
 import { KOPPEN, KOPPEN_GROUP, CROPS, CONFIGS, MODULES, ACR, SCENARIOS, ADOPTION_STEPS, INFO, GRID_EF, REF_GCR } from './knowledge.js';
-import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf, gridScore } from './model.js';
+import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf, gridScore, LAND_BASES, farmShare } from './model.js';
 import { acrOf, agroClimate } from './agroclimate.js';
 import { initShadowPage, renderShadowPage, shadowSummaryHTML } from './shadowpage.js';
 import { methodHTML, sourcesHTML } from './pages.js';
@@ -16,12 +16,12 @@ const DEFAULT_W = { solar: 30, crop: 25, cobenefit: 15, water: 15, grid: 15 };
 const S = {
   scenario: 'moderate', custom: false,
   L: null, W: { ...DEFAULT_W },
-  layer: 'suit', stateFilter: '', selected: null, basemap: false, rankKey: 'mw',
+  layer: 'suit', stateFilter: '', selected: null, basemap: false, rankKey: 'mw', yearVar: 'g',
 };
 function scenarioLevers(key) {
   const sc = SCENARIOS[key];
   return { adoption: sc.adoption, threshold: sc.threshold, config: sc.config, gcr: sc.gcr, gcrAuto: false, height: 3.5, eff: sc.eff,
-    bifacial: true, module: 'topcon', crop: 'auto', margin: 120000, marginAuto: true, capex: sc.capex, tariff: sc.tariff, rate: 9, om: 7 };
+    bifacial: true, module: 'topcon', land: 'compact', crop: 'auto', margin: 120000, marginAuto: true, capex: sc.capex, tariff: sc.tariff, rate: 9, om: 7 };
 }
 S.L = scenarioLevers(S.scenario);
 
@@ -98,6 +98,7 @@ function shareURL() {
 }
 
 // ---------------------------------------------------------------- layers
+const DIV = ['#c0564b', '#e3a08f', '#f6f1e2', '#9fd3b9', '#2a7a63'];
 const RAMP = ['#f6f1e2', '#d7ecd9', '#a9d8bd', '#78c8a5', '#46a383', '#2a7a63', '#1a5546', '#13322c'];
 const LAYERS = {
   koppen: { label: 'Köppen-Geiger climate class', cat: true, info: 'koppen', color: d => koppenOf(d).color, key: d => d.kg,
@@ -117,19 +118,25 @@ const LAYERS = {
   ghi:    { label: 'Solar resource, GHI (kWh/m²/day)', unit: 'kWh/m²/d', get: d => d.ghi, dec: 2, info: 'ghi' },
   yield:  { label: 'Specific yield (kWh/kWp/yr)', unit: 'kWh/kWp', get: (d, t) => t.e.Y, dec: 0, info: 'yield' },
   lcoe:   { label: 'LCOE (₹/kWh)', unit: '₹/kWh', get: (d, t) => t.e.lcoe, dec: 2, info: 'lcoe' },
-  crop:   { label: 'Cropland share (%)', unit: '%', get: d => 100 * ((d.lc && d.lc.crop) || 0), dec: 0, info: 'cropland', domain: [0, 90] },
+  farm:   { label: 'Land base for agrivoltaics (% of district)', unit: '%', get: d => 100 * farmShare(d, S.L), dec: 0, info: 'land', domain: [0, 90] },
+  crop24: { label: 'Cropland 2024, GLAD (%)', unit: '%', get: d => d.lu ? 100 * d.lu.c24 : NaN, dec: 0, info: 'crop24', domain: [0, 90] },
+  cropc:  { label: 'Compact farmland 2024, GLAD (%)', unit: '%', get: d => d.lu ? 100 * d.lu.cc : NaN, dec: 0, info: 'compact', domain: [0, 90] },
+  cropchg:{ label: 'Cropland change 2019–2024 (% points)', unit: 'pp', get: d => d.lu ? 100 * (d.lu.c24 - d.lu.c19) : NaN, dec: 1, info: 'cropchg', diverging: true },
+  crop:   { label: 'Cropland 2021, ESA WorldCover (%)', unit: '%', get: d => 100 * ((d.lc && d.lc.crop) || 0), dec: 0, info: 'cropland', domain: [0, 90] },
   water:  { label: 'Water saving under panels (%)', unit: '%', get: (d, t) => t.e.water * 100, dec: 0, info: 'water' },
   rain:   { label: 'Annual rainfall (mm)', unit: 'mm', get: d => d.rain, dec: 0 },
   temp:   { label: 'Mean annual temperature (°C)', unit: '°C', get: d => d.t, dec: 1 },
+  wind:   { label: 'Mean wind speed at 10 m (m/s)', unit: 'm/s', get: d => d.ws10, dec: 1, info: 'wind' },
+  wind50: { label: 'Mean wind speed at 50 m (m/s)', unit: 'm/s', get: d => d.ws50, dec: 1, info: 'wind' },
   hot:    { label: 'Months with Tmax ≥ 35 °C', unit: 'months', get: d => d.hot, dec: 0, domain: [0, 12] },
 };
 
-function rampColor(v, lo, hi) {
+function rampColor(v, lo, hi, ramp = RAMP) {
   if (v == null || !isFinite(v)) return '#e5e7eb';
   let f = hi > lo ? (v - lo) / (hi - lo) : 0.5;
   f = Math.max(0, Math.min(1, f));
-  const x = f * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), t = x - i;
-  const a = hexRgb(RAMP[i]), b = hexRgb(RAMP[i + 1]);
+  const x = f * (ramp.length - 1), i = Math.min(ramp.length - 2, Math.floor(x)), t = x - i;
+  const a = hexRgb(ramp[i]), b = hexRgb(ramp[i + 1]);
   return `rgb(${a.map((c, k) => Math.round(c + (b[k] - c) * t)).join(',')})`;
 }
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
@@ -144,6 +151,7 @@ function layerDomain() {
   if (!vals.length) { domain = [0, 1]; return; }
   const q = p => vals[Math.min(vals.length - 1, Math.max(0, Math.round(p * (vals.length - 1))))];
   domain = [q(0.02), q(0.98)];
+  if (Ly.diverging) { const m = Math.max(Math.abs(domain[0]), Math.abs(domain[1])) || 1; domain = [-m, m]; }
   if (domain[0] === domain[1]) domain = [domain[0] - 1, domain[1] + 1];
 }
 function fillFor(d) {
@@ -151,7 +159,7 @@ function fillFor(d) {
   if (Ly.cat) return Ly.color(d);
   const v = Ly.get(d, T.get(d.id));
   if (Ly.zeroGrey && !(v > 0)) return '#e8e4d8';
-  return rampColor(v, domain[0], domain[1]);
+  return rampColor(v, domain[0], domain[1], Ly.diverging ? DIV : RAMP);
 }
 const inScope = d => !S.stateFilter || d.st === S.stateFilter;
 
@@ -188,6 +196,7 @@ function buildControls() {
     Object.entries(CONFIGS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
   $('#module').innerHTML = Object.entries(MODULES).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join('');
   $('#module').onchange = e => { S.L.module = e.target.value; S.L.eff = MODULES[e.target.value].eff; if (!MODULES[e.target.value].bifi) S.L.bifacial = false; changed(); };
+  $('#land').innerHTML = Object.entries(LAND_BASES).map(([k, b]) => `<option value="${k}">${esc(b.label)}</option>`).join('');
   $('#crop').innerHTML = Object.entries(CROPS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
   $('#layer').innerHTML = Object.entries(LAYERS).map(([k, l]) => `<option value="${k}">${esc(l.label)}</option>`).join('');
   const states = [...new Set(D.map(d => d.st))].sort();
@@ -202,6 +211,7 @@ function buildControls() {
     changed();
   };
   $('#crop').onchange = e => { S.L.crop = e.target.value; changed(); };
+  $('#land').onchange = e => { S.L.land = e.target.value; changed(); layerDomain(); restyle(); renderLegend(); };
   $('#gcrAuto').onchange = e => { S.L.gcrAuto = e.target.checked; changed(); };
   $('#marginAuto').onchange = e => { S.L.marginAuto = e.target.checked; changed(); };
   $('#bifacial').onchange = e => { S.L.bifacial = e.target.checked; changed(); };
@@ -247,6 +257,7 @@ function syncControls() {
   $('#adoption').max = ADOPTION_STEPS.length - 1; $('#adoption').value = ai;
   $('#o-adoption').textContent = fmt(L.adoption, L.adoption < 0.1 ? 3 : (L.adoption < 1 ? 2 : 1)) + '%';
   for (const [k, f] of Object.entries(SLIDERS)) { $('#' + k).value = L[k]; $('#o-' + k).textContent = f(L[k]); }
+  $('#land').value = L.land || 'compact';
   $('#config').value = L.config; $('#crop').value = L.crop; $('#module').value = L.module;
   const mod = MODULES[L.module];
   $('#module-ex').textContent = `${mod.note} Temperature coefficient ${mod.gamma}%/°C, degradation ${mod.deg}%/yr${mod.bifi ? `, bifaciality ${Math.round(mod.bifi * 100)}%` : ', monofacial only'}.`;
@@ -281,7 +292,7 @@ function openInfo(btn) {
 function buildMap() {
   map = L.map('map', { preferCanvas: true, zoomSnap: 0.25, minZoom: 3.5, maxZoom: 11, attributionControl: true, zoomControl: true });
   map.attributionControl.setPrefix(false);
-  map.attributionControl.addAttribution('Boundaries: datta07/INDIAN-SHAPEFILES · Data: NASA POWER, ESA WorldCover, Köppen-Geiger (Rubel et al.) · Grid: © OpenStreetMap contributors (Overture Maps)');
+  map.attributionControl.addAttribution('Boundaries: datta07/INDIAN-SHAPEFILES · Data: NASA POWER (MERRA-2, CERES), UMD GLAD cropland, ESA WorldCover, Köppen-Geiger (Rubel et al.) · Grid: © OpenStreetMap contributors (Overture Maps)');
   const renderer = L.canvas({ padding: 0.3, tolerance: 2 });
   distLayer = L.geoJSON(geo, {
     renderer,
@@ -352,7 +363,7 @@ function renderLegend() {
       keys.map(k => `<div><span class="sw" style="background:${Ly.colorOfKey(k)}"></span>${esc(Ly.name(k))} <span style="color:var(--muted)">(${present[k]})</span></div>`).join('') + '</div>' + overlayLegend();
     return;
   }
-  const grad = `linear-gradient(90deg, ${RAMP.join(',')})`;
+  const grad = `linear-gradient(90deg, ${(Ly.diverging ? DIV : RAMP).join(',')})`;
   el.innerHTML = `<div class="t">${esc(Ly.label)}${info}</div><div class="ramp" style="background:${grad}"></div>
     <div class="ramp-labels"><span>${fmt(domain[0], Ly.dec)}</span><span>${fmt((domain[0] + domain[1]) / 2, Ly.dec)}</span><span>${fmt(domain[1], Ly.dec)}</span></div>` +
     (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '') + overlayLegend();
@@ -378,7 +389,7 @@ function renderKPIs() {
     k('Project IRR', fmt(s.irr * 100, 1), '%', 'irr') +
     k('Investment', fmt(s.inv / 1e5, s.inv < 1e5 ? 2 : 1), '₹ lakh cr', 'capex') +
     k('CO₂ avoided', fmt(s.co2, s.co2 < 10 ? 1 : 0), 'Mt/yr', 'co2');
-  $('#scope-line').innerHTML = `<b>${esc(S.stateFilter || 'All India')}</b> · ${s.n} of ${s.all} districts at or above the suitability threshold · cropland ${fmt(s.cropHa / 1e6, 1)} million ha · scenario: ${esc((S.custom ? 'custom, based on ' : '') + SCENARIOS[S.scenario].label)}`;
+  $('#scope-line').innerHTML = `<b>${esc(S.stateFilter || 'All India')}</b> · ${s.n} of ${s.all} districts at or above the suitability threshold · land base (${esc(LAND_BASES[S.L.land || 'compact'].short)}) ${fmt(s.cropHa / 1e6, 1)} million ha · scenario: ${esc((S.custom ? 'custom, based on ' : '') + SCENARIOS[S.scenario].label)}`;
 }
 
 // ---------------------------------------------------------------- district specs
@@ -404,6 +415,7 @@ function renderDistrict() {
   if (d.rain > 2500) risks.push('Very high rainfall: drainage and run-off');
   if (d.frost > 5) risks.push(`${fmt(d.frost)} frost days a year`);
   if ((lc.tree || 0) > 0.5) risks.push('Mostly forest: limited open farmland');
+  if (d.lu && d.lu.c24 > 0.05 && d.lu.cc < 0.3 * d.lu.c24) risks.push('Fragmented fields: most cropland is in small, scattered patches');
   const rank = [...D].sort((a, b) => T.get(b.id).s - T.get(a.id).s).findIndex(x => x.id === d.id) + 1;
 
   el.innerHTML = `
@@ -425,7 +437,7 @@ function renderDistrict() {
       ${mini('Suitability', fmt(t.s), `/100 · #${rank}`, 'suit')}
       ${mini('GHI', fmt(d.ghi, 2), 'kWh/m²/d', 'ghi')}
       ${mini('Spec. yield', fmt(e.Y), 'kWh/kWp', 'yield')}
-      ${mini('Cropland', fmt(100 * (lc.crop || 0)), '%', 'cropland')}
+      ${mini('Land base', fmt(100 * farmShare(d, S.L)), '% of area', 'land')}
       ${mini('LER', fmt(e.ler, 2), '', 'ler')}
       ${mini('LCOE', '₹' + fmt(e.lcoe, 2), '/kWh', 'lcoe')}
     </div>
@@ -472,11 +484,35 @@ function renderDistrict() {
       ${mini('Mean temp', fmt(d.t, 1), '°C')}
       ${mini('Rainfall', fmt(d.rain), 'mm/yr')}
       ${mini('Hot months', fmt(d.hot), 'Tmax≥35°C')}
+      ${mini('Wind 10 m', fmt(d.ws10, 1), 'm/s', 'wind')}
+      ${mini('Wind 50 m', fmt(d.ws50, 1), 'm/s', 'wind')}
+      ${mini('Humidity', fmt(d.rh), '%')}
     </div>
+    <p class="hint" style="margin:0 0 6px">Averages for 2001–2025 (NASA POWER: MERRA-2 for weather, CERES for sunlight).</p>
     ${barChart(d.ghim, 'Monthly GHI', 'kWh/m²/day', 2, '#f6b31f')}
     ${barChart(d.rm, 'Monthly rainfall', 'mm', 0, '#5b8fd1')}
     ${lineChart(d.tm, 'Monthly mean temperature', '°C', 1)}
-    <div class="chart-title"><span>Land cover (ESA WorldCover 2021)</span></div>
+    ${d.wsm ? barChart(d.wsm, 'Monthly wind speed at 10 m', 'm/s', 1, '#78c8a5') : ''}
+    <div class="chart-title" style="margin-top:10px"><span>Year by year, 2001–2025${info('years')}</span>
+      <span class="yr-tabs">${Object.entries(YEAR_VARS).map(([k, v]) => `<button class="yr-tab${k === S.yearVar ? ' on' : ''}" data-yv="${k}">${v[0]}</button>`).join('')}</span></div>
+    <div id="d-years"><p class="hint">Loading…</p></div>
+  </section>
+
+  <section class="section">
+    <h3>Agricultural land use${info('land')}</h3>
+    ${d.lu ? `<div class="mini-grid" style="margin-bottom:6px">
+      ${mini('Cropland 2024', fmt(100 * d.lu.c24), '%', 'crop24')}
+      ${mini('Compact farmland', fmt(100 * d.lu.cc), '%', 'compact')}
+      ${mini('Change since 2019', (d.lu.c24 >= d.lu.c19 ? '+' : '') + fmt(100 * (d.lu.c24 - d.lu.c19), 1), 'pp', 'cropchg')}
+    </div>
+    <table class="spec">
+      <tr><td>Cropland 2024 (GLAD)</td><td>${fmt(d.area * d.lu.c24 / 10, 1)} thousand ha</td></tr>
+      <tr><td>of which compact farmland</td><td>${fmt(d.area * d.lu.cc / 10, 1)} thousand ha (${fmt(100 * d.lu.cc / Math.max(d.lu.c24, 1e-6))}% of cropland)</td></tr>
+      <tr><td>Cropland 2019 (GLAD)</td><td>${fmt(d.area * d.lu.c19 / 10, 1)} thousand ha</td></tr>
+      <tr><td>Cropland 2021 (ESA WorldCover)</td><td>${fmt(d.area * (lc.crop || 0) / 10, 1)} thousand ha</td></tr>
+      <tr><td>Land base used now</td><td>${esc(LAND_BASES[S.L.land || 'compact'].label)}</td></tr>
+    </table>` : '<p class="hint">No GLAD cropland data for this district.</p>'}
+    <div class="chart-title" style="margin-top:10px"><span>Land cover (ESA WorldCover 2021)</span></div>
     <div class="share-bar" style="height:12px">${lcOrder.filter(([key]) => lc[key] > 0.003).map(([key, n, c]) => `<div title="${n} ${fmt(lc[key] * 100)}%" style="flex:${lc[key]};background:${c}"></div>`).join('')}</div>
     <div class="share-legend">${lcOrder.filter(([key]) => lc[key] > 0.01).map(([key, n, c]) => `<span><i class="sw" style="background:${c}"></i>${n} ${fmt(lc[key] * 100)}%</span>`).join('')}</div>
   </section>
@@ -549,8 +585,8 @@ function renderDistrict() {
     <h3>Scenario result for this district${info('capacity')}</h3>
     ${t.eligible ? '' : `<p class="hint">Suitability ${t.s} is below the threshold of ${S.L.threshold}, so the scenario adds no capacity here. Lower the threshold to include it.</p>`}
     <table class="spec">
-      <tr><td>Cropland</td><td>${fmt(t.cropHa / 1000, 1)} thousand ha</td></tr>
-      <tr><td>Agrivoltaic area</td><td>${fmt(t.ha, 0)} ha (${fmt(S.L.adoption, 3)}% of cropland)</td></tr>
+      <tr><td>Land base${info('land')}</td><td>${fmt(t.cropHa / 1000, 1)} thousand ha (${esc(LAND_BASES[S.L.land || 'compact'].short)})</td></tr>
+      <tr><td>Agrivoltaic area</td><td>${fmt(t.ha, 0)} ha (${fmt(S.L.adoption, 3)}% of the land base)</td></tr>
       <tr><td>Capacity</td><td>${fmt(t.mw, t.mw < 10 ? 1 : 0)} MWp</td></tr>
       <tr><td>Generation</td><td>${fmt(t.gwh, t.gwh < 10 ? 1 : 0)} GWh/yr</td></tr>
       <tr><td>Investment</td><td>₹${fmt(t.inv, 0)} crore</td></tr>
@@ -561,6 +597,49 @@ function renderDistrict() {
   </section>`;
   const sg = $('#d-showgrid'); if (sg) sg.onclick = () => { if (!gridLayer || !map.hasLayer(gridLayer)) togglePowerGrid(); select(d.id, true); };
   $('#d-close').onclick = () => { S.selected = null; restyle(); renderDistrict(); showTab('levers'); };
+  $$('.yr-tab', el).forEach(b => b.onclick = () => { S.yearVar = b.dataset.yv; $$('.yr-tab', el).forEach(x => x.classList.toggle('on', x === b)); renderYears(d); });
+  renderYears(d);
+}
+
+// ---------------------------------------------------------------- year-by-year climate (2001–2025), loaded on first use
+const YEAR_VARS = { g: ['Sun', 'GHI', 'kWh/m²/day', 2, '#f6b31f'], r: ['Rain', 'Rainfall', 'mm', 0, '#5b8fd1'], t: ['Temp', 'Mean temperature', '°C', 1, '#13322c'], w: ['Wind', 'Wind speed at 10 m', 'm/s', 2, '#78c8a5'] };
+let YEARS = null, yearsLoading = null;
+async function renderYears(d) {
+  const box = $('#d-years');
+  if (!box) return;
+  if (!YEARS) {
+    yearsLoading = yearsLoading || fetch('data/climate_years.json').then(r => r.json()).then(j => (YEARS = j)).catch(() => null);
+    await yearsLoading;
+    if (!YEARS) { box.innerHTML = '<p class="hint">Year-by-year data could not be loaded.</p>'; return; }
+    if (S.selected !== d.id || !$('#d-years')) return;
+  }
+  const row = YEARS.d[d.id];
+  if (!row) { box.innerHTML = '<p class="hint">No year-by-year data for this district.</p>'; return; }
+  const [, title, unit, dec, color] = YEAR_VARS[S.yearVar];
+  $('#d-years').innerHTML = yearChart(row[S.yearVar], YEARS.years, title, unit, dec, color);
+}
+function yearChart(vals, years, title, unit, dec, color) {
+  const W = 360, H = 110, pad = { l: 4, r: 4, t: 16, b: 16 };
+  const n = vals.length, mean = vals.reduce((a, b) => a + b, 0) / n;
+  const lo0 = Math.min(...vals), hi = Math.max(...vals), lo = Math.max(0, lo0 - (hi - lo0) * 0.6);
+  const bw = (W - pad.l - pad.r) / n, py = v => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
+  const imax = vals.indexOf(hi), imin = vals.indexOf(lo0);
+  // least-squares trend per decade
+  const xm = (n - 1) / 2; let sxy = 0, sxx = 0;
+  vals.forEach((v, i) => { sxy += (i - xm) * (v - mean); sxx += (i - xm) ** 2; });
+  const slope = sxy / sxx;
+  const bars = vals.map((v, i) => {
+    const x = pad.l + i * bw + 1, w = bw - 2, y = py(v);
+    return `<g><title>${years[i]}: ${fmt(v, dec)} ${unit}</title><rect x="${pad.l + i * bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>
+      <rect x="${x}" y="${y}" width="${w}" height="${H - pad.b - y}" rx="1.5" fill="${color}" opacity="${i === n - 1 ? 1 : 0.75}"/>
+      ${i === imax || i === imin ? `<text x="${x + w / 2}" y="${y - 3}" font-size="8.5" text-anchor="middle" fill="#1f2937" font-weight="700">${fmt(v, dec)}</text>` : ''}
+      ${years[i] % 5 === 0 || i === 0 ? `<text x="${x + w / 2}" y="${H - 4}" font-size="9" text-anchor="middle" fill="#64748b">${years[i]}</text>` : ''}</g>`;
+  }).join('');
+  const t0 = py(mean - slope * xm), t1 = py(mean + slope * xm);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title} by year"><line x1="0" x2="${W}" y1="${H - pad.b}" y2="${H - pad.b}" stroke="#e6dec8"/>${bars}
+    <line x1="${pad.l}" x2="${W - pad.r}" y1="${py(mean)}" y2="${py(mean)}" stroke="#94a3b8" stroke-dasharray="3 3"/>
+    <line x1="${pad.l + bw / 2}" x2="${W - pad.r - bw / 2}" y1="${t0}" y2="${t1}" stroke="#c0564b" stroke-width="1.5"/></svg>
+    <div class="hint" style="margin-top:2px">${esc(title)}: 25-year mean ${fmt(mean, dec)} ${unit} (dashed); trend ${slope * 10 >= 0 ? '+' : '−'}${fmt(Math.abs(slope * 10), dec + 1)} ${unit} per decade (red); ${years[n - 1]} ${fmt(vals[n - 1], dec)} ${unit}.</div>`;
 }
 
 function barChart(vals, title, unit, dec, color) {
@@ -646,10 +725,10 @@ function buildSearch() {
 
 // ---------------------------------------------------------------- CSV
 function downloadCSV() {
-  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_pct', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'project_irr_pct', 'payback_yr', 'module', 'agro_climatic_region', 'aridity_index', 'growing_period_days', 'dist_to_substation_km', 'line_density_km_per_100km2', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt'];
+  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_worldcover2021_pct', 'cropland_glad2024_pct', 'compact_farmland_glad2024_pct', 'cropland_change_2019_2024_pp', 'land_base_ha', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'wind_10m_ms', 'wind_50m_ms', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'project_irr_pct', 'payback_yr', 'module', 'agro_climatic_region', 'aridity_index', 'growing_period_days', 'dist_to_substation_km', 'line_density_km_per_100km2', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt'];
   const rows = D.map(d => {
     const t = T.get(d.id), e = t.e;
-    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.ghi, d.t, d.rain, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, e.irr * 100, e.payback, e.mod.short, ACR[d.acr].name, d.ac.ai, d.ac.lgp, d.grid ? d.grid.dsub : '', d.grid ? d.grid.dens : '', t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000]
+    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.lu ? 100 * d.lu.c24 : '', d.lu ? 100 * d.lu.cc : '', d.lu ? 100 * (d.lu.c24 - d.lu.c19) : '', t.cropHa, d.ghi, d.t, d.rain, d.ws10, d.ws50, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, e.irr * 100, e.payback, e.mod.short, ACR[d.acr].name, d.ac.ai, d.ac.lgp, d.grid ? d.grid.dsub : '', d.grid ? d.grid.dens : '', t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000]
       .map(v => typeof v === 'number' ? +v.toFixed(3) : `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob([head.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });

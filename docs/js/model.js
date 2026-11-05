@@ -74,9 +74,28 @@ export function gridScore(d) {
   return 0.6 * fd + 0.4 * fl;
 }
 
-export function suitability(d, W) {
+// Agricultural land base for the potential: which cropland map, and whether to keep only compact farmland.
+export const LAND_BASES = {
+  compact: { label: 'Compact farmland 2024 (GLAD, recommended)', short: 'compact farmland 2024' },
+  glad:    { label: 'All cropland 2024 (GLAD)', short: 'cropland 2024' },
+  wc:      { label: 'All cropland 2021 (ESA WorldCover)', short: 'WorldCover cropland 2021' },
+};
+const wcCrop = d => (d.lc && d.lc.crop) || 0;
+// Share of the district that is cropland on the chosen map (feeds the suitability score)
+export function cropShare(d, L) {
+  if ((L && L.land) === 'wc' || !d.lu) return wcCrop(d);
+  return d.lu.c24;
+}
+// Share of the district counted as land available for agrivoltaics (feeds capacity)
+export function farmShare(d, L) {
+  const base = (L && L.land) || 'compact';
+  if (base === 'wc' || !d.lu) return wcCrop(d);
+  return base === 'glad' ? d.lu.c24 : d.lu.cc;
+}
+
+export function suitability(d, W, L) {
   const k = koppenOf(d);
-  const crop = (d.lc && d.lc.crop) || 0;
+  const crop = cropShare(d, L);
   const fs = clamp((d.ghi - 4.0) / 1.8, 0, 1);
   const fc = clamp(crop / 0.75, 0, 1);
   const fb = clamp(betaOf(d) / 0.6, 0, 1);
@@ -139,9 +158,9 @@ export function evaluate(d, L) {
 
 // District totals under the scenario
 export function districtTotals(d, L, W) {
-  const s = suitability(d, W);
+  const s = suitability(d, W, L);
   const e = evaluate(d, L);
-  const cropHa = d.area * 100 * ((d.lc && d.lc.crop) || 0);
+  const cropHa = d.area * 100 * farmShare(d, L); // agricultural land base, ha
   const eligible = s >= L.threshold;
   const ha = eligible ? cropHa * L.adoption / 100 : 0;
   const mw = ha * e.density;
