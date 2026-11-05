@@ -21,7 +21,7 @@ A district-level agrivoltaics (agri-PV) screening dashboard for all 791 district
 |---|---|
 | District boundaries | [datta07/INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) |
 | Köppen-Geiger class | Rubel et al. (2017), 1986–2010, via [kgcpy](https://pypi.org/project/kgcpy/); s/w precedence harmonised with Peel et al. (2007) |
-| Solar (GHI, DNI, diffuse, PAR) | NASA POWER v10 CERES SYN1deg monthly, averaged here over 2001–2025 (AWS Open Data) |
+| Solar (GHI, diffuse share) | NASA POWER v10 CERES SYN1deg monthly, averaged here over 2001–2025 (AWS Open Data) |
 | Climate (temperature, rainfall, humidity, wind at 2/10/50 m) | NASA POWER v10 MERRA-2 monthly, averaged here over 2001–2025; the same MERRA-2 reanalysis as [IDEEA](https://github.com/wri-india/IDEEA-public) / [merra2ools](https://github.com/optimal2050/merra2ools) |
 | Agricultural land (default land base) | UMD GLAD annual cropland 2024 and 2019 (30 m; Potapov et al. 2022, *Nature Food*) |
 | Land cover | ESA WorldCover 2021 v200 |
