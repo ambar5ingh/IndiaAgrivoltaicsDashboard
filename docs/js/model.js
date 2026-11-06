@@ -1,5 +1,5 @@
 // Agrivoltaic screening model: one district + one set of levers -> design and results.
-import { KOPPEN, CROPS, CONFIGS, MODULES, GRID_EF, REF_GCR } from './knowledge.js';
+import { KOPPEN, CROPS, CONFIGS, MODULES, GRID_EF, REF_GCR, RULES, NEGATIVE, aczConfig, HANDBOOK } from './knowledge.js';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
@@ -12,16 +12,30 @@ export function betaOf(d) {
   return k.beta + Math.min(0.10, 0.01 * (d.hot || 0)) * (k.beta > 0 ? 1 : 0);
 }
 
+export const rulesOf = L => RULES[(L && L.rules) || 'india'] || RULES.india;
+
 export function cropFor(d, L) {
   if (L.crop !== 'auto') return L.crop;
-  const list = koppenOf(d).crops;
-  return list && list.length ? list[0] : 'leafy';
+  let list = koppenOf(d).crops || [];
+  if (rulesOf(L).negative.length) list = list.filter(c => !NEGATIVE.includes(c));
+  return list.length ? list[0] : 'leafy';
 }
 
 export function configFor(d, L) {
-  if (L.config !== 'auto') return L.config;
+  if (L.config === 'autoacz' || (L.config === 'auto' && rulesOf(L).autoConfig === 'acz')) {
+    const a = d.acr ? aczConfig(d.acr, d.rain) : null;
+    if (a) return a;
+  } else if (L.config !== 'auto') return L.config;
   const c = koppenOf(d).config;
   return CONFIGS[c] ? c : 'elevated';
+}
+
+// Share of the district's land base kept by the handbook's land screens (screens.json; 1 when absent)
+export function screenShare(d, L) {
+  const m = (L && L.screens) || 'none', sc = d.scr;
+  if (m === 'none' || !sc) return 1;
+  if (sc.none) return 0;
+  return m === 'gis5' ? sc.ok5 : sc.ok;
 }
 
 export const moduleOf = L => MODULES[L.module] || MODULES.topcon;
@@ -100,7 +114,8 @@ export function suitability(d, W, L) {
   const fc = clamp(crop / 0.75, 0, 1);
   const fb = clamp(betaOf(d) / 0.6, 0, 1);
   const fw = aridity(d);
-  const fg = gridScore(d);
+  // under Indian rules grid access is the share of farmland within 5 km of a substation (handbook Section 1.2)
+  const fg = rulesOf(L).screens !== 'none' && d.scr && !d.scr.none ? clamp(d.scr.sub5 / 0.6, 0, 1) : gridScore(d);
   const wg = W.grid || 0;
   const wsum = W.solar + W.crop + W.cobenefit + W.water + wg || 1;
   let s = (W.solar * fs + W.crop * fc + W.cobenefit * fb + W.water * fw + wg * fg) / wsum;
@@ -150,7 +165,11 @@ export function evaluate(d, L) {
   const npv = cf.reduce((s2, x, t) => s2 + x / Math.pow(1 + r, t), 0) / 1e7; // Rs crore per MWp
   const tilt = c.tiltFixed ? Math.round(clamp(Math.abs(d.lat) + k.tiltAdj, 8, 45)) : (cfgKey === 'vertical' ? 90 : 0);
   const pitch = cfgKey === 'vertical' ? c.collector / gcr : c.collector / gcr;
+  // handbook checks: performance ratio (AC yield / plane-of-array irradiation), rainwater from the modules
+  const pr = Y1 / (d.ghi * 365 * (1 + 0.0045 * Math.abs(d.lat)) * c.ftilt);
+  const rwh = gcr * d.rain / 1000 * 1e4 * HANDBOOK.runoff; // m3 per ha of array per year
   return {
+    pr, rwh, llr: c.landLoss,
     cfgKey, cfg: c, mod, cropKey, crop, gcr, Y1, Y, Yref, cf, irr: irrP, irrSys: irrS, payback, npv, cuf: Y / 8760, density, eHa, elecRel, shade, beta, ry, cropRel, ler, water,
     capex, lcoe, margin, revElec, revCrop, netElec: revElec - costElec, tilt, pitch,
   };
@@ -160,10 +179,15 @@ export function evaluate(d, L) {
 export function districtTotals(d, L, W) {
   const s = suitability(d, W, L);
   const e = evaluate(d, L);
-  const cropHa = d.area * 100 * farmShare(d, L); // agricultural land base, ha
-  const eligible = s >= L.threshold;
+  const scr = screenShare(d, L);
+  const cropHa = d.area * 100 * farmShare(d, L) * scr; // agricultural land base after any handbook screens, ha
+  const R = rulesOf(L);
+  const ghiOk = !(R.ghiExclude && d.ghi < R.ghiExclude);
+  const eligible = s >= L.threshold && ghiOk;
   const ha = eligible ? cropHa * L.adoption / 100 : 0;
   const mw = ha * e.density;
   const gwh = mw * e.Y / 1000;
-  return { s, e, cropHa, eligible, ha, mw, gwh, inv: mw * e.capex, co2: gwh * GRID_EF / 1000 }; // inv Rs crore, co2 Mt
+  const hill = d.acr === 1 || d.acr === 2;
+  const projects = mw > 0 ? Math.ceil(mw / (hill ? HANDBOOK.mwHill : HANDBOOK.mwPlain)) : 0;
+  return { s, e, cropHa, scr, ghiOk, eligible, ha, mw, gwh, projects, inv: mw * e.capex, co2: gwh * GRID_EF / 1000 }; // inv Rs crore, co2 Mt
 }

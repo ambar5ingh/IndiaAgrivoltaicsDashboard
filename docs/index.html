@@ -34,7 +34,8 @@
   <nav class="main-nav" aria-label="Pages">
     <a href="#/dashboard" data-page="dashboard">Dashboard</a>
     <a href="#/shadow" data-page="shadow">Shadow analysis</a>
-    <a href="#/koppen" data-page="koppen">Köppen climate guide</a>
+    <a href="#/koppen" data-page="koppen">Köppen guide</a>
+    <a href="#/policy" data-page="policy">Policy</a>
     <a href="#/method" data-page="method">Methodology</a>
     <a href="#/sources" data-page="sources">Data &amp; sources</a>
   </nav>
@@ -56,6 +57,15 @@
     <div class="panel-body">
       <!-- levers -->
       <div class="tab-pane active" id="tab-levers">
+        <section class="section rules-box">
+          <h3>Rules <button class="info" data-info="rules" aria-label="About rule sets">i</button></h3>
+          <div class="seg" id="rules-seg" role="group" aria-label="Rule set">
+            <button data-r="intl" aria-pressed="false">International</button>
+            <button data-r="india" aria-pressed="true">India (MNRE 2026)</button>
+          </div>
+          <div class="sub" id="rules-ex"></div>
+        </section>
+
         <section class="section">
           <h3><span class="n">1</span> Scenario <button class="info" data-info="scenario" aria-label="About scenarios">i</button></h3>
           <div class="scen-grid" id="scen-grid"></div>
@@ -63,6 +73,10 @@
           <div class="field">
             <div class="field-head">Agricultural land base <button class="info" data-info="land">i</button></div>
             <select id="land"></select>
+          </div>
+          <div class="field">
+            <div class="field-head">Handbook land screens <button class="info" data-info="screens">i</button></div>
+            <select id="screens"></select>
           </div>
           <div class="field">
             <div class="field-head">Adoption, share of land base <button class="info" data-info="adoption">i</button><output id="o-adoption"></output></div>
@@ -215,6 +229,11 @@
     </div>
     <div class="kg-cards" id="kg-cards"></div>
   </div>
+</main>
+
+<!-- ============================================================ POLICY -->
+<main id="page-policy" class="page page-scroll">
+  <div class="page-wrap" id="policy-body"></div>
 </main>
 
 <!-- ============================================================ METHOD -->

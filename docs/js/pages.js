@@ -42,14 +42,14 @@ Relative crop yield = (1 − land loss) × (1 − α × shade + β × shade)
 β = climate co-benefit of the Köppen class + 0.01 per month with Tmax ≥ 35 °C (max +0.10)
 Electricity term   = energy per ha ÷ energy per ha of a conventional plant (GCR ${REF_GCR}, same modules)
 LER = relative crop yield + electricity term</div>
-  <p>α is the crop group's shade sensitivity; β is the share of the light loss that partial shade wins back in hot, dry climates through lower leaf temperature and water stress. Published field trials report LER between 1.3 and 1.7 (Dupraz et al. 2011; Fraunhofer ISE Heggelbach; ICAR-CAZRI Jodhpur 1.42–1.62). The dashboard flags designs that fall below the DIN SPEC 91434 floor of 66% crop yield, or Japan's 80% rule.</p>
+  <p>α is the crop group's shade sensitivity; β is the share of the light loss that partial shade wins back in hot, dry climates through lower leaf temperature and water stress. Published field trials report LER between 1.3 and 1.7 (Dupraz et al. 2011; Fraunhofer ISE Heggelbach; ICAR-CAZRI Jodhpur 1.42–1.62). Under Indian rules the dashboard checks the MNRE handbook's 80% yield rule; under international rules, the DIN SPEC 91434 floor of 66%, Japan's 80% and France's 90%. The α values follow the handbook's light-response classes (Table 4.1): soybean, groundnut and potato are moderately shade-tolerant (10–25% loss), maize, sorghum and sugarcane are shade-sensitive.</p>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Crop group</th><th>Examples</th><th>α</th><th>Default gross margin / ha / yr</th></tr></thead><tbody>${cropRows}</tbody></table></div>
   <h3>Water saving</h3>
   <div class="formula">Evapotranspiration reduction = 0.6 × shade × (0.6 + 0.4 × aridity),  aridity = clamp((1500 − rain) / 1300, 0, 1)</div></div>
 
   <div class="card"><h2>4. Configurations</h2>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Configuration</th><th>Default GCR</th><th>k_shade</th><th>Land loss</th><th>Yield factor</th><th>Bifacial</th><th>Cooling</th><th>Capex premium</th></tr></thead><tbody>${cfgRows}</tbody></table></div>
-  <p>With configuration set to <b>auto</b>, each district uses the configuration recommended for its Köppen class: interspace in the hot desert, greenhouses in alpine and continental zones, elevated systems elsewhere. Elevated systems add 4% capex for every metre of clearance above 3 m.</p></div>
+  <p>With configuration set to <b>auto</b> under international rules, each district uses the configuration recommended for its Köppen class: interspace in the hot desert, greenhouses in alpine and continental zones, elevated systems elsewhere. Under Indian rules, auto follows the handbook's agro-climatic zone table (Table 2.5): overhead fixed in the Indo-Gangetic plains, inter-row fixed on the rainfed peninsular plateau (500–800 mm), vertical east–west in semi-arid Rajasthan and Gujarat, and structure-integrated (greenhouse) on the Western Ghats and coast (over 2,000 mm); Himalayan regions keep the Köppen choice. Elevated systems add 4% capex for every metre of clearance above 3 m. Land loss follows reported values (handbook Section 3.5.4): overhead 5%, inter-row 12%, vertical 8%, trackers 18%.</p></div>
 
   <div class="card"><h2>5. Suitability and scenarios</h2>
   <div class="formula">Suitability = 100 × Σ wᵢ fᵢ / Σ wᵢ
@@ -81,13 +81,35 @@ Growing period = days in months warmer than 5 °C with rain ≥ 0.5 × ET0, with
   <div class="card"><h2>9. Shadow analysis</h2>
   <p>Rows are treated as infinitely long, so a 2D cross-section across them is exact. The sun position comes from latitude, day of year and solar time. For every point between two rows, and every 10 minutes of the 15th of each month, a ray toward the sun is tested against the panels. Direct light uses a clear-sky beam model; diffuse light is the sky view factor of the point, mixed in at the district's diffuse share from NASA POWER. Months are weighted by monthly GHI. The same rays from points on a module give the row-to-row shading loss. Trackers follow the sun to ±55° without backtracking. The 3D view renders the same geometry with three.js shadow maps.</p></div>
 
-  <div class="card"><h2>10. Limitations</h2>
+  <div class="card"><h2>10. Rule sets and handbook checks</h2>
+  <p>The <b>Rules</b> switch at the top of the levers chooses between international rules (DIN SPEC 91434, France's APER decree, Japan's solar sharing, Italy's guidelines) and the MNRE <i>Agri-Photovoltaics Policy Handbook for India</i> (October 2026). The Indian rule set changes: clearance minimum 3.0 m (slider floor), the 80% yield rule, the auto crop (skips the Negative List), the auto configuration (agro-climatic zone), excludes districts with GHI under 4.0 kWh/m²/day from scenarios, uses the share of farmland within 5 km of a substation as the grid-access factor in the suitability score, and turns on the land screens. Both rule sets cap land loss at 10% (overhead) and 15% (inter-row, vertical) and coverage at 40%.</p>
+  <div class="formula">Performance ratio ≈ year-1 AC yield ÷ (GHI × 365 × transposition factor)          benchmark ≥ 0.75
+CUF = lifetime-average yield ÷ 8,760 h                                              benchmark ≥ 17%
+Rainwater from panels (m³/ha of array/yr) = GCR × rainfall (m) × 10,000 × 0.8
+Projects = scenario MWp ÷ 2 MW (plains) or ÷ 0.4 MW (Himalayan regions)
+Row pitch check: pitch ≥ 1.5 × table width and a ≥ 3 m pathway between panel edges (Section 9.8.1); vertical 8–12 m</div></div>
+
+  <div class="card"><h2>11. Handbook site screens</h2>
+  <p><code>pipeline/build_screens.py</code> applies the GIS screens of handbook Table 2.1 (adapted from TERI 2025) on the same ~300 m grid as the land data, as shares of each district's compact farmland:</p>
+  <ul>
+    <li><b>Terrain:</b> slope from the Copernicus DEM GLO-90 (90 m). Kept: slope under 8°, and where the slope is 2° or more, facing south, south-east or south-west (azimuth 112.5–247.5°).</li>
+    <li><b>Protected areas:</b> OpenStreetMap protected areas and national parks from Overture Maps <code>base/land_use</code> (subtype protected, October 2026 release), buffered by 1 km.</li>
+    <li><b>Flood:</b> cells where at least 2% of the land (or of a neighbouring cell) was seasonally under water (water in 1–49% of observations) in the JRC Global Surface Water record, 1984–2021.</li>
+    <li><b>Substation:</b> straight-line distance from each cell to the nearest of about 20,000 substations of any voltage in OpenStreetMap (Overture Maps <code>base/infrastructure</code>). The handbook asks for ≤5 km line-routing distance; straight-line distance is shorter, while missing 33/11 kV substations make it longer.</li>
+  </ul>
+  <div class="formula">R-value = farmland passing terrain, protected-area and flood screens ÷ compact farmland
+Land base with screens = land base × R-value   (× share within 5 km of a substation, if chosen)
+Handbook GIS potential = Σ compact farmland × R-value × 0.13 (horticulture share) × 0.42–0.75 MW/ha, districts with GHI ≥ 4.5</div>
+  <p>This comes out several times above TERI's 1.2–2.1 TW on 2.8 million ha, because the soil-productivity screen (ICAR-NBSS) is not applied, OSM protected areas are less complete than WDPA, and the crop split is a national average. Read it as an upper bound.</p>
+  <p>The handbook's crop-wise steps (crop area A<sub>i</sub>, cropping intensity C<sub>i</sub>, six horticultural crop categories) need MoAFW statistics that are not openly reachable, so the potential here has no crop split and no cropping-intensity division. Soil productivity (ICAR-NBSS) is not screened for the same reason.</p></div>
+
+  <div class="card"><h2>12. Limitations</h2>
   <ul>
     <li>District averages hide large differences within a district, especially in hill districts and along coasts.</li>
     <li>NASA POWER solar data is about 100 km resolution and usually reads a few percent below high-resolution products such as Solargis or the Global Solar Atlas.</li>
     <li>Crop responses are simplified linear screening relations. Real responses depend on variety, season, irrigation and how light is spread under the array.</li>
     <li>Satellite cropland maps (GLAD, ESA WorldCover) include fallow and seasonally cropped land and do not tell irrigated from rain-fed land. They differ from the official Land Use Statistics (net sown area) of the Directorate of Economics and Statistics, which are not available as open, machine-readable district data for recent years.</li>
-    <li>Not modelled: grid connection and substation capacity, land tenure and leasing, slope, flood zones, protected areas.</li>
+    <li>Not modelled: feeder and transformer headroom (the handbook's 60–75% loading band and 80% injection rule), land tenure and leasing, soil productivity, crop-wise area statistics. Slope, flood-prone land, protected areas and substation distance are screened from open data (section 11) and are indicative.</li>
     <li>District boundaries follow the source shapefile, including areas administered by other countries that India claims.</li>
   </ul></div>`;
 }
@@ -106,15 +128,20 @@ export function sourcesHTML() {
     <tr><td>Agricultural land (cropland 2024 and 2019)</td><td>${a('https://glad.umd.edu/dataset/croplands', 'UMD GLAD')} annual cropland maps; Potapov, P. et al. (2022) <i>Nature Food</i> 3, 19–28</td><td>30 m, averaged to about 300 m</td></tr>
     <tr><td>Power grid (lines, substations)</td><td>${a('https://www.openstreetmap.org/', 'OpenStreetMap')} contributors via ${a('https://docs.overturemaps.org/', 'Overture Maps')} base/infrastructure (ODbL)</td><td>Release 2026-10-21</td></tr>
     <tr><td>Agro-climatic regions</td><td>Planning Commission (1989), Agro-Climatic Regional Planning</td><td>15 regions</td></tr>
+    <tr><td>Substations (all voltages) and protected areas, for the handbook screens</td><td>OpenStreetMap contributors via Overture Maps base/infrastructure and base/land_use (ODbL)</td><td>Release 2026-10-21</td></tr>
+    <tr><td>Terrain (slope, aspect)</td><td>${a('https://registry.opendata.aws/copernicus-dem/', 'Copernicus DEM GLO-90')} (© DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA)</td><td>90 m</td></tr>
+    <tr><td>Seasonally inundated land (flood proxy)</td><td>${a('https://global-surface-water.appspot.com/', 'JRC Global Surface Water')} v1.4; Pekel, J.-F. et al. (2016) <i>Nature</i> 540, 418–422</td><td>30 m, 1984–2021</td></tr>
+    <tr><td>Indian policy rules</td><td>MNRE (2026) <i>Agri-Photovoltaics Policy Handbook for India</i>, V1.0, October 2026, with NISE, ICAR, BIS, IIT Roorkee and the India Agrivoltaics Alliance</td><td>Rules, thresholds, screens</td></tr>
     <tr><td>Land cover (all classes)</td><td>${a('https://esa-worldcover.org/', 'ESA WorldCover 2021 v200')}</td><td>10 m, read at about 300 m</td></tr>
   </tbody></table></div></div>
 
   <div class="card"><h2>Agrivoltaics in India: research behind the defaults</h2>
   <ul>
-    <li><b>Potential.</b> TERI (2026) estimates 1,192–2,129 GW of agrivoltaics on 2.8 million ha of highly suitable cropland, mostly horticulture, at 0.42–0.75 MW/ha. As of August 2025 India had 36 operational agrivoltaic projects totalling 37.5 MW. ${a('https://taiyangnews.info/markets/teri-indias-agrivoltaic-potential-may-reach-21-tw', 'TaiyangNews summary')} · ${a('https://www.teriin.org/policy-brief/agri-photovoltaics-potential-india-pathways-sustainable-energy-food-solutions', 'TERI policy brief')}</li>
+    <li><b>Policy.</b> The MNRE <i>Agri-Photovoltaics Policy Handbook for India</i> (October 2026) defines AgriPV as dual land use with agriculture as the primary activity and electricity as a second activity, sets boundary conditions (up to 2 MW in the plains, ≤5 km to a substation, ≥3 m clearance, LLR 10–15%, crop Positive and Negative Lists, DCR bifacial modules), a 7-step GIS method adapted from TERI (2025), four business models from the India Agrivoltaics Alliance and an MRV reporting card. See the Policy &amp; rules page.</li>
+    <li><b>Potential.</b> TERI (2025, <i>Agri-Photovoltaics Potential in India</i>, as cited by the MNRE handbook) estimates 1,192–2,129 GW of agrivoltaics on 2.8 million ha of highly suitable cropland, mostly horticulture, at 0.42–0.75 MW/ha. As of August 2025 India had 36 operational agrivoltaic projects totalling 37.5 MW. ${a('https://taiyangnews.info/markets/teri-indias-agrivoltaic-potential-may-reach-21-tw', 'TaiyangNews summary')} · ${a('https://www.teriin.org/policy-brief/agri-photovoltaics-potential-india-pathways-sustainable-energy-food-solutions', 'TERI policy brief')}</li>
     <li><b>Field evidence.</b> ICAR-CAZRI's 105 kW system in Jodhpur (2017) grows arid-zone pulses, cumin, isabgol and aloe between panel rows, recycles rainwater from the panels (about 1.5 lakh litres per acre) and reports LER of 1.42–1.62. ${a('https://www.cazri.res.in/publications/technologies/T18E.pdf', 'CAZRI technology sheet')}</li>
     <li><b>Costs and policy.</b> Agri-PV raises capital cost by 15–25% over conventional solar; PM-KUSUM Component A tariffs have been about ₹3.0–3.45/kWh, with 10 GW sanctioned. ${a('https://renewablewatch.in/2026/01/07/promising-pathway-pm-kusum-2-0-could-give-a-bigger-push-to-agrivoltaics', 'Renewable Watch (2026)')} · ${a('https://cstep.in/publication/tariff-design-and-revenue-optimization-for-agrivoltaics-projects-under-the-pm-kusum-scheme-a-financial-viability-analysis-for-madhya-pradesh-india/', 'CSTEP tariff study')} · ${a('https://www.climatepolicyinitiative.org/publication/tapping-the-potential-ofagriphotovoltaics-in-india/', 'CPI: Tapping the potential of agri-PV in India')}</li>
-    <li><b>Standards.</b> DIN SPEC 91434: Category I overhead (≥2.1 m clearance, ≤10% land loss), Category II interspace (≤15% land loss), crop yield at least 66% of the reference. France (2024 decree) caps coverage at 40% and allows at most a 10% yield loss. Japan's solar-sharing permits ask for at least 80% of normal yield. ${a('https://www.tib-op.org/ojs/index.php/agripv/article/download/2539/2756', 'AgriVoltaics Conference Proceedings')}</li>
+    <li><b>Standards.</b> MNRE handbook (2026): clear height ≥3 m (4.0–4.5 m for tractors, 5 m for combines), yield ≥80% of baseline, LLR ≤10% overhead and ≤15% inter-row and vertical, GCR 30–40% for field crops with a proposed 40% upper bound. DIN SPEC 91434: Category I overhead (≥2.1 m clearance, ≤10% land loss), Category II interspace (≤15% land loss), crop yield at least 66% of the reference. France (2024 decree) caps coverage at 40% and allows at most a 10% yield loss. Japan's solar-sharing permits ask for at least 80% of normal yield. ${a('https://www.tib-op.org/ojs/index.php/agripv/article/download/2539/2756', 'AgriVoltaics Conference Proceedings')}</li>
     <li><b>Programmes.</b> ${a('https://indiaagripv.org/dashboard', 'Indian Agrivoltaics Alliance (NSEFI, TERI, CSTEP): National Agrivoltaics Dashboard')} · ${a('https://energyforum.in/fileadmin/india/media_elements/publications/20240502_AgriPV_in_India/Agrivoltaics_in_India.pdf', 'Indo-German Energy Forum: Agrivoltaics in India (2024)')} · ${a('https://cstep.in/drupal/sites/default/files/2023-02/Agrivoltaics%20for%20the%20Indian%20condition.pdf', 'CSTEP: Agrivoltaics for the Indian condition')}</li>
   </ul></div>
 
@@ -132,7 +159,76 @@ export function sourcesHTML() {
     <li>Gelaro, R. et al. (2017). The Modern-Era Retrospective Analysis for Research and Applications, Version 2 (MERRA-2). <i>Journal of Climate</i> 30, 5419–5454.</li>
     <li>Hargreaves, G.H. (1975). Moisture availability and crop production. <i>Transactions of the ASAE</i> 18, 980–984.</li>
     <li>Marion, B. et al. (2017). A practical irradiance model for bifacial PV modules. <i>IEEE PVSC</i>.</li>
+    <li>Dupraz, C. (2024). Assessment of the ground coverage ratio of agrivoltaic systems as a proxy for potential crop productivity. <i>Agroforestry Systems</i> 98, 2679–2696.</li>
+    <li>Pekel, J.-F. et al. (2016). High-resolution mapping of global surface water and its long-term changes. <i>Nature</i> 540, 418–422.</li>
     <li>Fraunhofer ISE (2024). <i>Agrivoltaics: Opportunities for Agriculture and the Energy Transition</i> (guideline).</li>
   </ul></div>
   <p class="footer-note">Built as an open screening tool. Numbers are indicative; check site conditions before investing.</p>`;
+}
+
+
+// Policy & rules page: international rules next to the MNRE handbook (2026)
+export function policyHTML({ rules, RULES, CROPS, NEGATIVE, POSITIVE, HANDBOOK, ghiCount, waterCount, meta }) {
+  const hl = k => rules === k ? ' class="hl"' : '';
+  const row = (p, i, n) => `<tr><td>${p}</td><td${hl('intl')}>${i}</td><td${hl('india')}>${n}</td></tr>`;
+  const lab = list => list.map(k => CROPS[k] ? CROPS[k].label : k).join(', ');
+  return `
+  <div class="hero"><h1 class="hero-title">Policy <span class="gradient-text">&amp; rules</span></h1>
+  <p class="hero-sub">The dashboard can check designs against international agrivoltaic rules or the MNRE <i>Agri-Photovoltaics Policy Handbook for India</i> (October 2026). Use the Rules switch at the top of the levers panel. Now active: <b>${rules === 'india' ? 'India (MNRE 2026)' : 'International'}</b>.</p></div>
+
+  <div class="card"><h2>The two rule sets</h2>
+  <div class="tbl-wrap"><table class="tbl rule-cmp"><thead><tr><th>Rule</th><th>International (DIN SPEC 91434, France, Japan, Italy)</th><th>India (MNRE handbook, 2026)</th></tr></thead><tbody>
+    ${row('Definition', 'Agriculture primary; DIN Category I overhead, Category II interspace', 'Dual land use with agriculture primary and electricity a "second activity" (not a "third crop"); land stays agricultural')}
+    ${row('Minimum clearance (overhead)', '2.1 m (DIN); France 4 m at the torque tube for its auctions', '3.0 m at the lowest point; 4.0–4.5 m for tractors; 5.0 m for combines; top edge ≤6 m')}
+    ${row('Crop yield floor', 'DIN ≥66% of reference; Japan ≥80%; France ≥90%', '≥80% of baseline yield of the same crop on the same land')}
+    ${row('Land loss', 'DIN ≤10% Category I, ≤15% Category II; France ≤10%', 'LLR ≤10% overhead, ≤15% inter-row and vertical; ≥85–90% of the area stays cultivable')}
+    ${row('Coverage / GCR', 'France ≤40% (>10 MW); Italy ≤40%, ≥70% of area farmed', '30–40% for field crops (advisory); <25% keeps yield above 80%; 40% proposed upper bound')}
+    ${row('Crops', 'No national list', 'Positive List: ' + lab(POSITIVE) + '. Negative List beneath the array: ' + lab(NEGATIVE) + ' (inter-row strips or MNRE exception only)')}
+    ${row('Solar resource', 'Not specified', 'GHI ≥4.5 kWh/m²/day for the GIS potential; 4.0–4.5 eligible; <4.0 excluded')}
+    ${row('Grid', 'Not specified', 'Up to 2 MW in the plains, 300–500 kW in hills; ≤5 km line-routing distance to a substation; feeder loading 60–75%; injection ≤80% of minimum daytime load')}
+    ${row('Site screens', 'Not specified', 'Cropland; slope <8° with S/SE/SW aspect; productive soils; no flood-prone land; protected areas + 1 km buffer excluded; forest land not eligible')}
+    ${row('Modules', 'Not specified', 'ALMM-listed, DCR-compliant bifacial, glass-glass preferred; bifaciality ≥0.70 for vertical systems; IEC TS 63126 for heat')}
+    ${row('Auto configuration in the dashboard', 'By Köppen class', 'By agro-climatic zone (Table 2.5)')}
+  </tbody></table></div></div>
+
+  <div class="card"><h2>What the Indian rules mean across India</h2>
+  <ul>
+    <li><b>Solar resource:</b> ${ghiCount.gis} districts at ≥4.5 kWh/m²/day, ${ghiCount.ok} between 4.0 and 4.5, and ${ghiCount.out} below 4.0 (excluded from scenarios under Indian rules). Map layer: Handbook GHI class.</li>
+    <li><b>Water:</b> ${waterCount.irr} districts get less than 600 mm of rain a year, where the handbook asks for assured groundwater or irrigation. Map layer: Handbook water rule.</li>
+    <li><b>Site screens:</b> ${meta ? 'map layers R-value, farmland within 5 km of a substation, terrain, protected areas and flood-prone farmland; built from Overture Maps ' + meta.overture + ', ' + meta.dem + ' and ' + meta.water + '.' : 'not loaded.'}</li>
+  </ul></div>
+
+  <div class="card"><h2>Agro-climatic zone and typology (handbook Table 2.5)</h2>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Zone</th><th>Rainfall</th><th>Typology</th><th>Key crops</th></tr></thead><tbody>
+    <tr><td>Indo-Gangetic Plains</td><td>600–1,000 mm</td><td>Overhead fixed</td><td>Vegetables, soybean, fodder</td></tr>
+    <tr><td>Peninsular Plateau (rainfed)</td><td>500–800 mm</td><td>Interspace fixed</td><td>Soybean, vegetables, pulses</td></tr>
+    <tr><td>Semi-arid (Rajasthan, Gujarat)</td><td>300–600 mm</td><td>Vertical east–west</td><td>Fodder, cash crops, vegetables</td></tr>
+    <tr><td>Western Ghats and coastal</td><td>&gt;2,000 mm</td><td>Structure-integrated (greenhouse)</td><td>Spices, floriculture, orchards</td></tr>
+  </tbody></table></div></div>
+
+  <div class="card"><h2>Reference configurations (handbook Table 9.7)</h2>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Configuration</th><th>Crop</th><th>GCR</th><th>Clearance</th><th>Row spacing</th><th>Module</th><th>Expected LER</th></tr></thead><tbody>
+    <tr><td>Elevated stilt, fixed tilt</td><td>Turmeric, leafy vegetables, coriander</td><td>30%</td><td>4.0 m</td><td>5.0 m</td><td>370 Wp bifacial mono</td><td>1.5–1.8</td></tr>
+    <tr><td>Inter-row, canopy height</td><td>Grape (trellis)</td><td>12%</td><td>Canopy height</td><td>1.8 m</td><td>310 Wp poly</td><td>1.1–1.3</td></tr>
+    <tr><td>Vertical east–west bifacial</td><td>Pulses, cotton (rainfed)</td><td>35%</td><td>n/a</td><td>7.0 m</td><td>400 Wp bifacial</td><td>1.2–1.5</td></tr>
+  </tbody></table></div></div>
+
+  <div class="card"><h2>Business models and farmer rights (handbook Section 1.4)</h2>
+  <ul>
+    <li><b>Farmer-owned:</b> the farmer is landowner, generator and cultivator, and keeps all income; capex from equity, loans or state subsidy. For farmers with ≥2 acres, credit access and an 11 kV feeder within 5 km.</li>
+    <li><b>Community-owned (FPO, cooperative, panchayat, WUA):</b> pooled land and finance (NABARD, cooperative banks); electricity revenue shared by a disclosed formula.</li>
+    <li><b>Developer-led:</b> the developer owns the plant on leased land; the farmer farms (sub-variant A) or the developer also farms (B). Lease at least fair market rent, indexed to WPI or CPI (Rural), secured by a bank guarantee; RESCO variant shares revenue with the farmer.</li>
+    <li><b>DISCOM / public utility:</b> the public entity owns or contracts the plant on leased land; lease rates notified by the SNA; suited to remote or hilly areas.</li>
+    <li><b>Rights in every model:</b> land ownership, the right to farm, all crop income, annual generation reports, and recourse without a lawyer for claims under ₹5 lakh.</li>
+  </ul></div>
+
+  <div class="card"><h2>Monitoring targets (handbook MRV reporting card, Table 10.8)</h2>
+  <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Indicator</th><th>Target</th></tr></thead><tbody>
+    <tr><td>Performance ratio</td><td>≥0.75</td></tr><tr><td>CUF</td><td>≥17%</td></tr><tr><td>PAR reduction at the crop</td><td>15–35%</td></tr>
+    <tr><td>Crop yield</td><td>≥80% of baseline</td></tr><tr><td>Irrigation water productivity</td><td>≥ baseline WUE (kg/m³); irrigation saving ≥10% desirable</td></tr>
+    <tr><td>Cultivable area</td><td>≥85–90% of the project area</td></tr><tr><td>Cropping intensity</td><td>≥80% of the regional baseline</td></tr>
+    <tr><td>LER</td><td>&gt;1</td></tr><tr><td>Soil</td><td>pH within ±0.5, SOC ≥90% of baseline, no significant rise in EC or compaction</td></tr>
+    <tr><td>Farm operations</td><td>Operation time ≤120% of baseline; ≥90% of area accessible</td></tr><tr><td>Data completeness</td><td>≥95%</td></tr>
+  </tbody></table></div>
+  <p class="footer-note">Source: MNRE (2026) Agri-Photovoltaics Policy Handbook for India, V1.0. The handbook's provisions are advisory; statutory and regulatory provisions prevail.</p></div>`;
 }

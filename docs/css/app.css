@@ -243,6 +243,15 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip { font-size: .72rem; padding: 4px 9px; border-radius: 100px; background: #eef7f1; border: 1px solid #cfe8db; color: var(--dark-green); font-weight: 600; }
 .chip.warn { background: #fff6e0; border-color: #f3dfa6; color: #7a5600; }
+.chip.ok { background: #e3f4ea; border-color: #a9d8bd; color: #1a5546; }
+.rules-box { background: linear-gradient(135deg, #f5e8c9 0%, #eef7f1 100%); border-radius: 14px; padding: 12px 12px 10px; border: 1px solid #e6dec8; }
+.seg { display: flex; gap: 0; border: 1px solid #13322c; border-radius: 999px; overflow: hidden; margin: 4px 0 8px; }
+.seg button { flex: 1; font: inherit; font-size: .78rem; font-weight: 700; padding: 7px 8px; border: 0; background: #fff; color: #13322c; cursor: pointer; }
+.seg button + button { border-left: 1px solid #13322c; }
+.seg button.on { background: #13322c; color: #fff; }
+.seg button:focus-visible { outline: 2px solid #f6b31f; outline-offset: -2px; }
+.rule-cmp td:first-child { font-weight: 600; }
+.rule-cmp td.hl { background: #eef7f1; }
 .notes { margin: 6px 0 0; padding-left: 18px; font-size: .76rem; line-height: 1.5; color: var(--text); }
 .notes li { margin-bottom: 3px; }
 .chart { width: 100%; height: auto; display: block; }
@@ -338,3 +347,4 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
   .sh-3d { height: 320px; }
 }
 .hint { font-size: .78rem; color: var(--muted); line-height: 1.45; }
+.rules-box .sub { font-size: .72rem; color: var(--muted); line-height: 1.4; }

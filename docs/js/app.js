@@ -1,8 +1,8 @@
-import { KOPPEN, KOPPEN_GROUP, CROPS, CONFIGS, MODULES, ACR, SCENARIOS, ADOPTION_STEPS, INFO, GRID_EF, REF_GCR } from './knowledge.js';
-import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf, gridScore, LAND_BASES, farmShare } from './model.js';
+import { KOPPEN, KOPPEN_GROUP, CROPS, CONFIGS, MODULES, ACR, SCENARIOS, ADOPTION_STEPS, INFO, GRID_EF, REF_GCR, RULES, SCREENS, NEGATIVE, POSITIVE, HANDBOOK } from './knowledge.js';
+import { evaluate, districtTotals, suitability, koppenOf, aridity, betaOf, gridScore, LAND_BASES, farmShare, rulesOf, screenShare } from './model.js';
 import { acrOf, agroClimate } from './agroclimate.js';
 import { initShadowPage, renderShadowPage, shadowSummaryHTML } from './shadowpage.js';
-import { methodHTML, sourcesHTML } from './pages.js';
+import { methodHTML, sourcesHTML, policyHTML } from './pages.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -16,16 +16,17 @@ const DEFAULT_W = { solar: 30, crop: 25, cobenefit: 15, water: 15, grid: 15 };
 const S = {
   scenario: 'moderate', custom: false,
   L: null, W: { ...DEFAULT_W },
-  layer: 'suit', stateFilter: '', selected: null, basemap: false, rankKey: 'mw', yearVar: 'g',
+  layer: 'suit', stateFilter: '', selected: null, basemap: false, rankKey: 'mw', yearVar: 'g', rules: 'india',
 };
 function scenarioLevers(key) {
-  const sc = SCENARIOS[key];
-  return { adoption: sc.adoption, threshold: sc.threshold, config: sc.config, gcr: sc.gcr, gcrAuto: false, height: 3.5, eff: sc.eff,
+  const sc = SCENARIOS[key], R = RULES[S.rules];
+  return { rules: S.rules, screens: R.screens, adoption: sc.adoption, threshold: sc.threshold, config: sc.config, gcr: sc.gcr, gcrAuto: false, height: Math.max(3.5, R.minClear), eff: sc.eff,
     bifacial: true, module: 'topcon', land: 'compact', crop: 'auto', margin: 120000, marginAuto: true, capex: sc.capex, tariff: sc.tariff, rate: 9, om: 7 };
 }
 S.L = scenarioLevers(S.scenario);
 
 let fitted = false;
+let SCREEN_META = null;
 let D = [], byId = new Map(), T = new Map(), geo, statesGeo, map, distLayer, stateLayer, baseLayer;
 
 // ---------------------------------------------------------------- loading
@@ -50,6 +51,11 @@ async function init() {
     const grid = await fetchJSON('data/grid.json', 'Loading grid access…', 98);
     D.forEach(d => { d.grid = grid[d.id] || null; });
   } catch (e) { /* grid layer optional */ }
+  try {
+    const scr = await fetchJSON('data/screens.json', 'Loading site screens…', 99);
+    SCREEN_META = scr._meta || null;
+    D.forEach(d => { d.scr = scr[d.id] || null; });
+  } catch (e) { /* screens optional */ }
   D.forEach(d => { byId.set(d.id, d); d.acr = acrOf(d); d.ac = agroClimate(d); });
   readHash();
   for (const d of D) T.set(d.id, districtTotals(d, S.L, S.W));
@@ -70,6 +76,7 @@ function route() {
   $$('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
   $('#popover').hidden = true;
   if (page === 'shadow') renderShadowPage(shadowCtx());
+  if (page === 'policy') $('#policy-body').innerHTML = policyHTML(policyCtx());
   $$('.main-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   if (page === 'dashboard' && map) setTimeout(() => {
     map.invalidateSize();
@@ -81,7 +88,9 @@ function readHash() {
   if (!q) return;
   const p = new URLSearchParams(q);
   if (p.get('s') && SCENARIOS[p.get('s')]) { S.scenario = p.get('s'); S.L = scenarioLevers(S.scenario); }
+  if (p.get('r') && RULES[p.get('r')]) { S.rules = p.get('r'); S.L = scenarioLevers(S.scenario); }
   if (p.get('L')) { try { Object.assign(S.L, JSON.parse(atob(p.get('L')))); S.custom = true; } catch (e) { /* ignore */ } }
+  S.L.rules = S.rules;
   if (p.get('W')) { try { Object.assign(S.W, JSON.parse(atob(p.get('W')))); S.custom = true; } catch (e) { /* ignore */ } }
   if (p.get('layer')) S.layer = p.get('layer');
   if (p.get('st')) S.stateFilter = p.get('st');
@@ -90,6 +99,7 @@ function readHash() {
 function shareURL() {
   const p = new URLSearchParams();
   p.set('s', S.scenario);
+  p.set('r', S.rules);
   if (S.custom) { p.set('L', btoa(JSON.stringify(S.L))); p.set('W', btoa(JSON.stringify(S.W))); }
   p.set('layer', S.layer);
   if (S.stateFilter) p.set('st', S.stateFilter);
@@ -129,7 +139,24 @@ const LAYERS = {
   wind:   { label: 'Mean wind speed at 10 m (m/s)', unit: 'm/s', get: d => d.ws10, dec: 1, info: 'wind' },
   wind50: { label: 'Mean wind speed at 50 m (m/s)', unit: 'm/s', get: d => d.ws50, dec: 1, info: 'wind' },
   hot:    { label: 'Months with Tmax ≥ 35 °C', unit: 'months', get: d => d.hot, dec: 0, domain: [0, 12] },
+  ghicls: { label: 'Handbook GHI class (MNRE Table 2.3)', cat: true, info: 'ghicls', key: d => ghiClass(d), color: d => GHI_CLS[ghiClass(d)][1],
+    name: k => GHI_CLS[k][0], keys: () => Object.keys(GHI_CLS), colorOfKey: k => GHI_CLS[k][1], tip: d => `${GHI_CLS[ghiClass(d)][0]} · ${fmt(d.ghi, 2)} kWh/m²/d` },
+  water600:{ label: 'Handbook water rule (rain ≥ 600 mm)', cat: true, info: 'water600', key: d => waterClass(d), color: d => WATER_CLS[waterClass(d)][1],
+    name: k => WATER_CLS[k][0], keys: () => Object.keys(WATER_CLS), colorOfKey: k => WATER_CLS[k][1], tip: d => `${fmt(d.rain)} mm/yr · ${WATER_CLS[waterClass(d)][0]}` },
+  rval:   { label: 'R-value: farmland passing handbook GIS screens (%)', unit: '%', get: d => scr(d, 'ok'), dec: 0, info: 'rval', domain: [0, 100] },
+  sub5:   { label: 'Farmland within 5 km of a substation (%)', unit: '%', get: d => scr(d, 'sub5'), dec: 0, info: 'sub5', domain: [0, 100] },
+  dsubf:  { label: 'Median distance, farmland to substation (km)', unit: 'km', get: d => d.scr && d.scr.dsub != null ? d.scr.dsub : NaN, dec: 1, info: 'sub5', domain: [0, 20] },
+  terr:   { label: 'Farmland on slope < 8°, suitable aspect (%)', unit: '%', get: d => scr(d, 'terr'), dec: 0, info: 'slope', domain: [50, 100] },
+  prot:   { label: 'Farmland in or within 1 km of protected areas (%)', unit: '%', get: d => scr(d, 'prot'), dec: 1, info: 'prot' },
+  flood:  { label: 'Flood-prone farmland, seasonal water (%)', unit: '%', get: d => scr(d, 'flood'), dec: 0, info: 'flood' },
+  rwh:    { label: 'Rainwater from panels (m³ per ha of array per yr)', unit: 'm³/ha', get: (d, t) => t.e.rwh, dec: 0, info: 'rwh' },
+  proj:   { label: 'Scenario projects (2 MW plains, 0.4 MW hills)', unit: 'projects', get: (d, t) => t.projects, dec: 0, info: 'projects', zeroGrey: true },
 };
+const GHI_CLS = { gis: ['≥ 4.5: counts for GIS potential', '#2a7a63'], ok: ['4.0–4.5: eligible for projects', '#f6b31f'], out: ['< 4.0: excluded at screening', '#c0564b'] };
+const WATER_CLS = { ok: ['≥ 600 mm: rain-fed possible', '#5b8fd1'], irr: ['< 600 mm: assured irrigation needed', '#e3a08f'] };
+function ghiClass(d) { return d.ghi >= HANDBOOK.ghiGis ? 'gis' : d.ghi >= HANDBOOK.ghiMin ? 'ok' : 'out'; }
+function waterClass(d) { return d.rain >= HANDBOOK.rainMin ? 'ok' : 'irr'; }
+function scr(d, k) { return d.scr && !d.scr.none && d.scr[k] != null ? 100 * d.scr[k] : NaN; }
 
 function rampColor(v, lo, hi, ramp = RAMP) {
   if (v == null || !isFinite(v)) return '#e5e7eb';
@@ -192,7 +219,9 @@ function buildControls() {
   });
   $('#btn-reset').onclick = () => { S.L = scenarioLevers(S.scenario); S.W = { ...DEFAULT_W }; S.custom = false; syncControls(); recompute(); };
   // selects
-  $('#config').innerHTML = `<option value="auto">Best fit for the climate zone (auto)</option>` +
+  $$('#rules-seg button').forEach(b => b.onclick = () => setRules(b.dataset.r));
+  $('#screens').innerHTML = Object.entries(SCREENS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  $('#config').innerHTML = `<option value="auto">Auto (by rule set: Köppen class or agro-climatic zone)</option><option value="autoacz">Auto by agro-climatic zone (MNRE Table 2.5)</option>` +
     Object.entries(CONFIGS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('');
   $('#module').innerHTML = Object.entries(MODULES).map(([k, m]) => `<option value="${k}">${esc(m.label)}</option>`).join('');
   $('#module').onchange = e => { S.L.module = e.target.value; S.L.eff = MODULES[e.target.value].eff; if (!MODULES[e.target.value].bifi) S.L.bifacial = false; changed(); };
@@ -207,10 +236,11 @@ function buildControls() {
   for (const k of Object.keys(SLIDERS)) $('#' + k).oninput = e => { S.L[k] = +e.target.value; if (k === 'gcr') S.L.gcrAuto = false; if (k === 'margin') S.L.marginAuto = false; changed(); };
   $('#config').onchange = e => {
     S.L.config = e.target.value;
-    if (e.target.value !== 'auto') { const c = CONFIGS[e.target.value]; S.L.gcr = c.gcr; if (e.target.value === 'elevated') S.L.height = Math.max(S.L.height, 3); }
+    if (CONFIGS[e.target.value]) { const c = CONFIGS[e.target.value]; S.L.gcr = c.gcr; if (e.target.value === 'elevated') S.L.height = Math.max(S.L.height, 3); }
     changed();
   };
   $('#crop').onchange = e => { S.L.crop = e.target.value; changed(); };
+  $('#screens').onchange = e => { S.L.screens = e.target.value; changed(); };
   $('#land').onchange = e => { S.L.land = e.target.value; changed(); layerDomain(); restyle(); renderLegend(); };
   $('#gcrAuto').onchange = e => { S.L.gcrAuto = e.target.checked; changed(); };
   $('#marginAuto').onchange = e => { S.L.marginAuto = e.target.checked; changed(); };
@@ -243,6 +273,17 @@ function buildControls() {
   buildSearch();
   syncControls();
 }
+// Switch rule set: sets the rule-driven levers, keeps the rest
+function setRules(r) {
+  if (!RULES[r] || r === S.rules) return;
+  S.rules = r; S.L.rules = r;
+  const R = RULES[r];
+  S.L.screens = R.screens;
+  S.L.height = Math.max(S.L.height, R.minClear);
+  if (r === 'india' && NEGATIVE.includes(S.L.crop)) S.L.crop = 'auto';
+  syncControls(); recompute();
+  $('#policy-body').innerHTML = policyHTML(policyCtx());
+}
 function flash(sel, txt) { const b = $(sel), o = b.textContent; b.textContent = txt; setTimeout(() => b.textContent = o, 1400); }
 function showTab(t) {
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
@@ -258,6 +299,16 @@ function syncControls() {
   $('#o-adoption').textContent = fmt(L.adoption, L.adoption < 0.1 ? 3 : (L.adoption < 1 ? 2 : 1)) + '%';
   for (const [k, f] of Object.entries(SLIDERS)) { $('#' + k).value = L[k]; $('#o-' + k).textContent = f(L[k]); }
   $('#land').value = L.land || 'compact';
+  const R = rulesOf(L);
+  $$('#rules-seg button').forEach(b => { b.classList.toggle('on', b.dataset.r === S.rules); b.setAttribute('aria-pressed', b.dataset.r === S.rules); });
+  $('#rules-ex').textContent = S.rules === 'india'
+    ? 'MNRE Agri-Photovoltaics Policy Handbook (Oct 2026): clearance ≥3 m, yield ≥80% of baseline, Negative List crops skipped by auto, districts under 4.0 kWh/m²/day excluded, auto design by agro-climatic zone, land screens on.'
+    : 'DIN SPEC 91434, France, Japan and Italy: clearance ≥2.1 m, yield ≥66% (DIN; Japan 80%, France 90%), coverage ≤40%. No Indian screens.';
+  $('#screens').value = L.screens || 'none';
+  $('#screens').disabled = !SCREEN_META;
+  $('#height').min = R.minClear;
+  if (L.height < R.minClear) L.height = R.minClear;
+  $('#height').value = L.height; $('#o-height').textContent = SLIDERS.height(L.height);
   $('#config').value = L.config; $('#crop').value = L.crop; $('#module').value = L.module;
   const mod = MODULES[L.module];
   $('#module-ex').textContent = `${mod.note} Temperature coefficient ${mod.gamma}%/°C, degradation ${mod.deg}%/yr${mod.bifi ? `, bifaciality ${Math.round(mod.bifi * 100)}%` : ', monofacial only'}.`;
@@ -265,8 +316,10 @@ function syncControls() {
   $('#gcrAuto').checked = L.gcrAuto; $('#marginAuto').checked = L.marginAuto; $('#bifacial').checked = L.bifacial;
   $('#o-gcr').textContent = L.gcrAuto ? 'by zone' : fmt(L.gcr, 2);
   $('#o-margin').textContent = L.marginAuto ? 'by crop' : SLIDERS.margin(L.margin);
-  $('#f-height').style.opacity = (L.config === 'elevated' || L.config === 'auto') ? 1 : .5;
-  const c = CROPS[L.crop]; $('#crop-ex').textContent = L.crop === 'auto' ? 'Each district gets the first crop group recommended for its Köppen class.' : 'For example ' + c.examples + '. Shade sensitivity α = ' + c.alpha + '.';
+  $('#f-height').style.opacity = (L.config === 'elevated' || L.config === 'auto' || L.config === 'autoacz') ? 1 : .5;
+  const c = CROPS[L.crop];
+  const neg = NEGATIVE.includes(L.crop) ? ' On the MNRE handbook\'s Negative List beneath the array: grow it in inter-row strips with more than 50% light, or seek an MNRE exception.' : (POSITIVE.includes(L.crop) ? ' On the handbook\'s Positive List.' : '');
+  $('#crop-ex').textContent = L.crop === 'auto' ? (R.negative.length ? 'Each district gets the first crop group recommended for its Köppen class that is not on the handbook\'s Negative List.' : 'Each district gets the first crop group recommended for its Köppen class.') : 'For example ' + c.examples + '. Shade sensitivity α = ' + c.alpha + '.' + neg;
   for (const k of Object.keys(DEFAULT_W)) { $('#w' + k).value = S.W[k]; $('#o-w' + k).textContent = S.W[k]; }
   $('#layer').value = S.layer; $('#state').value = S.stateFilter;
 }
@@ -369,13 +422,15 @@ function renderLegend() {
     (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '') + overlayLegend();
 }
 function scopeTotals() {
-  let mw = 0, gwh = 0, ha = 0, inv = 0, co2 = 0, ler = 0, n = 0, all = 0, cropHa = 0, irrW = 0;
+  let mw = 0, gwh = 0, ha = 0, inv = 0, co2 = 0, ler = 0, n = 0, all = 0, cropHa = 0, irrW = 0, proj = 0, gisHa = 0, excl = 0;
   for (const d of D) {
     if (!inScope(d)) continue;
-    const t = T.get(d.id); all++; cropHa += t.cropHa;
+    const t = T.get(d.id); all++; cropHa += t.cropHa; proj += t.projects;
+    if (!t.ghiOk) excl++;
+    if (d.scr && !d.scr.none && d.ghi >= HANDBOOK.ghiGis) gisHa += d.area * 100 * (d.lu ? d.lu.cc : 0) * d.scr.ok * HANDBOOK.hort;
     if (t.ha > 0) { n++; mw += t.mw; gwh += t.gwh; ha += t.ha; inv += t.inv; co2 += t.co2; ler += t.e.ler * t.ha; if (isFinite(t.e.irr)) irrW += t.e.irr * t.mw; }
   }
-  return { mw, gwh, ha, inv, co2, ler: ha ? ler / ha : NaN, irr: mw ? irrW / mw : NaN, n, all, cropHa };
+  return { mw, gwh, ha, inv, co2, ler: ha ? ler / ha : NaN, irr: mw ? irrW / mw : NaN, n, all, cropHa, proj, gisHa, excl };
 }
 function renderKPIs() {
   const s = scopeTotals();
@@ -389,7 +444,9 @@ function renderKPIs() {
     k('Project IRR', fmt(s.irr * 100, 1), '%', 'irr') +
     k('Investment', fmt(s.inv / 1e5, s.inv < 1e5 ? 2 : 1), '₹ lakh cr', 'capex') +
     k('CO₂ avoided', fmt(s.co2, s.co2 < 10 ? 1 : 0), 'Mt/yr', 'co2');
-  $('#scope-line').innerHTML = `<b>${esc(S.stateFilter || 'All India')}</b> · ${s.n} of ${s.all} districts at or above the suitability threshold · land base (${esc(LAND_BASES[S.L.land || 'compact'].short)}) ${fmt(s.cropHa / 1e6, 1)} million ha · scenario: ${esc((S.custom ? 'custom, based on ' : '') + SCENARIOS[S.scenario].label)}`;
+  const R = rulesOf(S.L);
+  const gis = SCREEN_META ? ` · handbook GIS potential <button class="info" data-info="teri">i</button> ${fmt(s.gisHa * HANDBOOK.pdMin / 1000)}–${fmt(s.gisHa * HANDBOOK.pdMax / 1000)} GW` : '';
+  $('#scope-line').innerHTML = `<b>${esc(S.stateFilter || 'All India')}</b> · rules: <b>${esc(R.label)}</b> · ${s.n} of ${s.all} districts in the scenario${s.excl ? ` (${s.excl} excluded for GHI < 4.0)` : ''} · land base (${esc(LAND_BASES[S.L.land || 'compact'].short)}${S.L.screens && S.L.screens !== 'none' && SCREEN_META ? ', after handbook screens' : ''}) ${fmt(s.cropHa / 1e6, 1)} million ha · ≈ ${fmt(s.proj)} projects${gis} · scenario: ${esc((S.custom ? 'custom, based on ' : '') + SCENARIOS[S.scenario].label)}`;
 }
 
 // ---------------------------------------------------------------- district specs
@@ -406,15 +463,46 @@ function renderDistrict() {
   const shares = (d.kgs && d.kgs.length ? d.kgs : [[d.kg, 1]]);
   const cfgName = e.cfg.label;
   const heightTxt = e.cfgKey === 'elevated' ? `${fmt(S.L.height, 1)} m (zone guide: ${k.height})` : (e.cfgKey === 'greenhouse' ? 'Greenhouse roof' : `${fmt(e.cfg.height, 1)} m lower edge`);
-  const tiltTxt = e.cfgKey === 'tracker' ? '±55° single-axis tracking' : e.cfgKey === 'vertical' ? '90° (vertical)' : `${e.tilt}° facing south`;
+  const tiltTxt = e.cfgKey === 'tracker' ? (S.rules === 'india' ? '±60° single-axis tracking (handbook)' : '±55° single-axis tracking') : e.cfgKey === 'vertical' ? '90° (vertical)' : `${e.tilt}° facing south`;
   const lc = d.lc || {};
   const lcOrder = [['crop', 'Cropland', '#e3b23c'], ['tree', 'Trees', '#2a7a63'], ['shrub', 'Shrub', '#a3b18a'], ['grass', 'Grass', '#cfe1b9'], ['built', 'Built-up', '#c0564b'], ['bare', 'Bare', '#d9cbb0'], ['water', 'Water', '#5b8fd1'], ['snow', 'Snow', '#e5eef5']];
-  const cropFlag = e.cropRel < 0.66 ? '<span class="chip warn">Below DIN SPEC 66% yield floor</span>' : (e.cropRel < 0.8 ? '<span class="chip warn">Below Japan\'s 80% rule</span>' : '<span class="chip">Meets DIN SPEC (≥66%) and Japan (≥80%) yield rules</span>');
+  const R = rulesOf(S.L);
+  const ok = (cond, yes, no) => `<span class="chip${cond ? ' ok' : ' warn'}">${cond ? '✓ ' : '✗ '}${esc(cond ? yes : no)}</span>`;
+  const cropFlag = S.rules === 'india'
+    ? ok(e.cropRel >= 0.8, 'Meets the MNRE handbook 80% yield rule', 'Below the MNRE handbook 80% yield rule') + `<span class="chip">Also: DIN 66% ${e.cropRel >= 0.66 ? '✓' : '✗'} · Japan 80% ${e.cropRel >= 0.8 ? '✓' : '✗'} · France 90% ${e.cropRel >= 0.9 ? '✓' : '✗'}</span>`
+    : ok(e.cropRel >= 0.66, 'Meets DIN SPEC 91434 (≥66%)', 'Below the DIN SPEC 66% yield floor') + ok(e.cropRel >= 0.8, 'Meets Japan (≥80%)', 'Below Japan\'s 80% rule') + ok(e.cropRel >= 0.9, 'Meets France (≥90%)', 'Below France\'s 90% rule');
+  const negCrop = NEGATIVE.includes(e.cropKey);
+  const llrCap = e.cfgKey === 'elevated' ? R.llr.elevated : R.llr.other;
+  const hc = e.cfgKey === 'elevated' ? S.L.height : null;
+  const kh = ['Kharif (Jun–Oct)', [5, 6, 7, 8, 9]], rb = ['Rabi (Nov–Feb)', [10, 11, 0, 1]], zd = ['Zaid (Mar–May)', [2, 3, 4]];
+  const seas = [kh, rb, zd].map(([n, ms]) => [n, ms.reduce((a, m) => a + d.ghim[m], 0) / ms.length]);
+  const sc = d.scr && !d.scr.none ? d.scr : null;
+  const pathway = e.cfgKey === 'elevated' || e.cfgKey === 'interspace' ? e.pitch - e.cfg.collector * Math.cos(e.tilt * Math.PI / 180) : null;
+  const designChecks = [];
+  if (e.cfgKey === 'elevated') {
+    designChecks.push(ok(hc >= R.minClear, `Clear height ${fmt(hc, 1)} m ≥ ${R.minClear} m`, `Clear height ${fmt(hc, 1)} m < ${R.minClear} m minimum`));
+    if (S.rules === 'india') designChecks.push(`<span class="chip">${hc >= 5 ? 'Combine harvesters can pass (≥5 m)' : hc >= 4 ? 'Standard tractors (4.0–4.5 m); combines need 5 m' : 'Compact tractors and manual work only (<4 m)'}</span>`);
+    designChecks.push(ok(Math.abs(e.tilt - Math.abs(d.lat)) <= 15, 'Tilt within latitude ±15°', 'Tilt outside latitude ±15°'));
+  }
+  if (pathway != null) designChecks.push(ok(e.pitch >= 1.5 * e.cfg.collector && pathway >= 3, `Row pitch ${fmt(e.pitch, 1)} m: ≥1.5 × table width, ${fmt(pathway, 1)} m pathway`, `Row pitch ${fmt(e.pitch, 1)} m: needs ≥1.5 × table width and a 3 m pathway`));
+  if (e.cfgKey === 'vertical') designChecks.push(ok(e.pitch >= 8 && e.pitch <= 12, `Row pitch ${fmt(e.pitch, 1)} m within 8–12 m`, `Row pitch ${fmt(e.pitch, 1)} m outside the handbook's 8–12 m`));
+  if (e.cfgKey === 'tracker') designChecks.push('<span class="chip">Handbook: N–S axis, ±60° rotation, 1P preferred for overhead</span>');
+  designChecks.push(ok(e.llr <= llrCap, `Land loss ${fmt(e.llr * 100)}% ≤ ${fmt(llrCap * 100)}% cap`, `Land loss ${fmt(e.llr * 100)}% above the ${fmt(llrCap * 100)}% cap`));
+  designChecks.push(ok(e.gcr <= R.gcrMax, `GCR ${fmt(e.gcr, 2)} ≤ ${R.gcrMax}`, `GCR ${fmt(e.gcr, 2)} above the ${R.gcrMax} cap`));
+  if (S.rules === 'india') {
+    designChecks.push(ok(e.cuf >= HANDBOOK.cuf, `CUF ${fmt(e.cuf * 100, 1)}% ≥ 17%`, `CUF ${fmt(e.cuf * 100, 1)}% below 17%`));
+    designChecks.push(ok(e.pr >= HANDBOOK.pr, `PR ≈ ${fmt(e.pr, 2)} ≥ 0.75`, `PR ≈ ${fmt(e.pr, 2)} below 0.75`));
+    designChecks.push(ok(S.L.bifacial && e.mod.bifi > 0, 'DCR bifacial modules', 'Handbook asks for DCR-compliant bifacial modules'));
+  }
   const risks = [...k.risks];
   if (d.hot >= 6) risks.push(`${d.hot} months with Tmax ≥ 35 °C`);
   if (d.rain > 2500) risks.push('Very high rainfall: drainage and run-off');
   if (d.frost > 5) risks.push(`${fmt(d.frost)} frost days a year`);
-  if ((lc.tree || 0) > 0.5) risks.push('Mostly forest: limited open farmland');
+  if ((lc.tree || 0) > 0.5) risks.push('Mostly forest: limited open farmland (forest land is not eligible under the MNRE handbook)');
+  if (d.rain < HANDBOOK.rainMin) risks.push(`Under 600 mm of rain: the handbook requires assured groundwater or irrigation`);
+  if (d.ghi < HANDBOOK.ghiMin) risks.push('GHI under 4.0 kWh/m²/day: the handbook excludes such sites at screening');
+  if (sc && sc.flood > 0.25) risks.push(`${fmt(sc.flood * 100)}% of farmland is flood-prone: raise equipment ≥0.6 m above flood level`);
+  if (sc && sc.prot > 0.1) risks.push(`${fmt(sc.prot * 100)}% of farmland lies in or within 1 km of protected areas`);
   if (d.lu && d.lu.c24 > 0.05 && d.lu.cc < 0.3 * d.lu.c24) risks.push('Fragmented fields: most cropland is in small, scattered patches');
   const rank = [...D].sort((a, b) => T.get(b.id).s - T.get(a.id).s).findIndex(x => x.id === d.id) + 1;
 
@@ -447,35 +535,59 @@ function renderDistrict() {
       <div class="e" style="width:${Math.min(100, e.elecRel / 2 * 100)}%">Power ${fmt(e.elecRel * 100)}%</div>
     </div>
     <div class="ler-axis"><span style="left:0;transform:none">0</span><span style="left:50%">1.0 (no gain)</span><span style="left:100%;transform:translateX(-100%)">2.0</span></div>
+    <div class="chips" style="margin-top:10px"><span class="chip ${ghiClass(d) === 'out' ? 'warn' : ghiClass(d) === 'gis' ? 'ok' : ''}">GHI class${info('ghicls')}: ${esc(GHI_CLS[ghiClass(d)][0])}</span>
+      ${seas.map(([n, v]) => `<span class="chip">${n}: ${fmt(v, 2)} kWh/m²/d</span>`).join('')}</div>
   </section>
 
   <section class="section">
     <h3>Recommended agrivoltaic design</h3>
     <table class="spec">
-      <tr><td>Configuration${info('config')}</td><td>${esc(cfgName)}${S.L.config === 'auto' ? ' <span style="color:var(--muted);font-weight:500">(auto for ' + esc(d.kg) + ')</span>' : ''}</td></tr>
+      <tr><td>Configuration${info('config')}</td><td>${esc(cfgName)}${S.L.config === 'autoacz' || (S.L.config === 'auto' && R.autoConfig === 'acz') ? ' <span style="color:var(--muted);font-weight:500">(auto for agro-climatic region ' + d.acr + ', ' + fmt(d.rain) + ' mm)</span>' : S.L.config === 'auto' ? ' <span style="color:var(--muted);font-weight:500">(auto for ' + esc(d.kg) + ')</span>' : ''}</td></tr>
       <tr><td>GCR${info('gcr')}</td><td>${fmt(e.gcr, 2)} <span style="color:var(--muted);font-weight:500">(zone range ${k.gcr[0]}–${k.gcr[1]})</span></td></tr>
       <tr><td>Clearance${info('height')}</td><td>${esc(heightTxt)}</td></tr>
       <tr><td>Tilt / orientation</td><td>${esc(tiltTxt)}; ${esc(e.cfg.orient)}</td></tr>
       <tr><td>Row pitch</td><td>≈ ${fmt(e.pitch, 1)} m (${fmt(e.cfg.collector, 1)} m collector ÷ GCR)</td></tr>
       <tr><td>Capacity density${info('density')}</td><td>${fmt(e.density, 2)} MWp/ha</td></tr>
-      <tr><td>Energy per hectare</td><td>${fmt(e.eHa, 0)} MWh/ha/yr (CUF ${fmt(e.cuf * 100, 1)}%)</td></tr>
+      <tr><td>Energy per hectare</td><td>${fmt(e.eHa, 0)} MWh/ha/yr</td></tr>
+      <tr><td>CUF / performance ratio${info('cuf')}</td><td>${fmt(e.cuf * 100, 1)}% / ${fmt(e.pr, 2)}</td></tr>
       <tr><td>Light reduction at crop</td><td>${fmt(e.shade * 100)}%</td></tr>
-      <tr><td>Land lost to structures</td><td>${fmt(e.cfg.landLoss * 100)}%</td></tr>
+      <tr><td>Land loss ratio (LLR)${info('llr')}</td><td>${fmt(e.llr * 100)}% (cap ${fmt(llrCap * 100)}%); ${fmt(100 - e.llr * 100)}% stays cultivable</td></tr>
+      <tr><td>Rainwater from panels${info('rwh')}</td><td>${fmt(e.rwh)} m³ per ha of array a year</td></tr>
       <tr><td>Modules</td><td>${fmt(S.L.eff, 1)}% ${S.L.bifacial ? 'bifacial' : 'monofacial'}${k.group === 'A' && d.rain > 2000 ? '; corrosion-grade frames' : ''}</td></tr>
       <tr><td>Capex${info('capex')}</td><td>₹${fmt(e.capex, 2)} crore/MWp</td></tr>
     </table>
+    <div class="chart-title" style="margin-top:10px"><span>Checks against ${esc(R.long.split(':')[0])} rules${info('rules')}</span></div>
+    <div class="chips">${designChecks.join('')}</div>
   </section>
 
   <section class="section">
     <h3>Crops${info('crop')}</h3>
-    <div class="chips" style="margin-bottom:8px">${k.crops.map(c => `<span class="chip" title="${esc(CROPS[c].examples)}">${esc(CROPS[c].label)}</span>`).join('')}</div>
+    <div class="chips" style="margin-bottom:8px">${k.crops.map(c => `<span class="chip${NEGATIVE.includes(c) && S.rules === 'india' ? ' warn' : ''}" title="${esc(CROPS[c].examples)}${NEGATIVE.includes(c) ? ' · MNRE Negative List: inter-row strips only' : ''}">${esc(CROPS[c].label)}${NEGATIVE.includes(c) && S.rules === 'india' ? ' (inter-row only)' : ''}</span>`).join('')}</div>
     <table class="spec">
       <tr><td>Modelled crop group</td><td>${esc(e.crop.label)} <span style="color:var(--muted);font-weight:500">(${esc(e.crop.examples)})</span></td></tr>
       <tr><td>Relative crop yield${info('crop_rel')}</td><td>${fmt(e.cropRel * 100)}% of open field</td></tr>
       <tr><td>Shade sensitivity α / climate benefit β</td><td>${fmt(e.crop.alpha, 2)} / ${fmt(e.beta, 2)}</td></tr>
       <tr><td>Water saving${info('water')}</td><td>${fmt(e.water * 100)}% less evapotranspiration</td></tr>
     </table>
-    <div class="chips" style="margin-top:8px">${cropFlag}</div>
+    <div class="chips" style="margin-top:8px">${cropFlag}${negCrop ? '<span class="chip warn">On the MNRE Negative List beneath the array: inter-row strips with >50% light, or an MNRE exception with ICAR evidence of ≥80% yield</span>' : ''}</div>
+  </section>
+
+  <section class="section">
+    <h3>Handbook site screens (MNRE Chapter 2)${info('screens')}</h3>
+    ${sc ? `<div class="mini-grid" style="margin-bottom:6px">
+      ${mini('R-value', fmt(sc.ok * 100), '% of farmland', 'rval')}
+      ${mini('≤5 km substation', fmt(sc.sub5 * 100), '% of farmland', 'sub5')}
+      ${mini('Median distance', fmt(sc.dsub, 1), 'km to substation', 'sub5')}
+    </div>
+    <table class="spec">
+      <tr><td>Solar resource (GHI)${info('ghicls')}</td><td>${fmt(d.ghi, 2)} kWh/m²/day: ${esc(GHI_CLS[ghiClass(d)][0])}</td></tr>
+      <tr><td>Slope &lt; 8°${info('slope')}</td><td>${fmt(sc.slope * 100)}% of farmland (${fmt(sc.terr * 100)}% with suitable aspect)</td></tr>
+      <tr><td>Protected areas + 1 km${info('prot')}</td><td>${fmt(sc.prot * 100, 1)}% of farmland excluded</td></tr>
+      <tr><td>Flood-prone land${info('flood')}</td><td>${fmt(sc.flood * 100)}% of farmland excluded</td></tr>
+      <tr><td>Water rule${info('water600')}</td><td>${fmt(d.rain)} mm/yr: ${esc(WATER_CLS[waterClass(d)][0])}</td></tr>
+      <tr><td>Farmland passing all screens</td><td>${fmt(d.area * (d.lu ? d.lu.cc : 0) * sc.ok / 10, 1)} thousand ha (${fmt(d.area * (d.lu ? d.lu.cc : 0) * sc.ok5 / 10, 1)} within 5 km of a substation)</td></tr>
+      <tr><td>Handbook GIS potential${info('teri')}</td><td>${d.ghi >= HANDBOOK.ghiGis ? `${fmt(d.area * 100 * (d.lu ? d.lu.cc : 0) * sc.ok * HANDBOOK.hort * HANDBOOK.pdMin)}–${fmt(d.area * 100 * (d.lu ? d.lu.cc : 0) * sc.ok * HANDBOOK.hort * HANDBOOK.pdMax)} MW at 0.42–0.75 MW/ha on the horticulture share` : 'Not counted: GHI below 4.5 kWh/m²/day'}</td></tr>
+    </table>` : '<p class="hint">' + (d.scr && d.scr.none ? 'No compact farmland in this district, so the screens do not apply.' : 'Site-screen data not loaded.') + '</p>'}
   </section>
 
   <section class="section">
@@ -583,11 +695,11 @@ function renderDistrict() {
 
   <section class="section">
     <h3>Scenario result for this district${info('capacity')}</h3>
-    ${t.eligible ? '' : `<p class="hint">Suitability ${t.s} is below the threshold of ${S.L.threshold}, so the scenario adds no capacity here. Lower the threshold to include it.</p>`}
+    ${t.eligible ? '' : (!t.ghiOk ? `<p class="hint">GHI ${fmt(d.ghi, 2)} kWh/m²/day is below the handbook's 4.0 cut-off, so Indian rules exclude this district. Switch to international rules to include it.</p>` : `<p class="hint">Suitability ${t.s} is below the threshold of ${S.L.threshold}, so the scenario adds no capacity here. Lower the threshold to include it.</p>`)}
     <table class="spec">
-      <tr><td>Land base${info('land')}</td><td>${fmt(t.cropHa / 1000, 1)} thousand ha (${esc(LAND_BASES[S.L.land || 'compact'].short)})</td></tr>
+      <tr><td>Land base${info('land')}</td><td>${fmt(t.cropHa / 1000, 1)} thousand ha (${esc(LAND_BASES[S.L.land || 'compact'].short)}${t.scr < 1 ? `, ${fmt(t.scr * 100)}% kept by the handbook screens` : ''})</td></tr>
       <tr><td>Agrivoltaic area</td><td>${fmt(t.ha, 0)} ha (${fmt(S.L.adoption, 3)}% of the land base)</td></tr>
-      <tr><td>Capacity</td><td>${fmt(t.mw, t.mw < 10 ? 1 : 0)} MWp</td></tr>
+      <tr><td>Capacity</td><td>${fmt(t.mw, t.mw < 10 ? 1 : 0)} MWp${t.projects ? ` (≈ ${fmt(t.projects)} projects of up to ${d.acr === 1 || d.acr === 2 ? '0.4' : '2'} MW)` : ''}</td></tr>
       <tr><td>Generation</td><td>${fmt(t.gwh, t.gwh < 10 ? 1 : 0)} GWh/yr</td></tr>
       <tr><td>Investment</td><td>₹${fmt(t.inv, 0)} crore</td></tr>
       <tr><td>CO₂ avoided${info('co2')}</td><td>${fmt(t.co2 * 1000, 0)} thousand t/yr</td></tr>
@@ -725,11 +837,12 @@ function buildSearch() {
 
 // ---------------------------------------------------------------- CSV
 function downloadCSV() {
-  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_worldcover2021_pct', 'cropland_glad2024_pct', 'compact_farmland_glad2024_pct', 'cropland_change_2019_2024_pp', 'land_base_ha', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'wind_10m_ms', 'wind_50m_ms', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'project_irr_pct', 'payback_yr', 'module', 'agro_climatic_region', 'aridity_index', 'growing_period_days', 'dist_to_substation_km', 'line_density_km_per_100km2', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt'];
+  const head = ['state', 'district', 'koppen', 'koppen_name', 'area_km2', 'cropland_worldcover2021_pct', 'cropland_glad2024_pct', 'compact_farmland_glad2024_pct', 'cropland_change_2019_2024_pp', 'land_base_ha', 'ghi_kwh_m2_day', 'mean_temp_c', 'rain_mm', 'wind_10m_ms', 'wind_50m_ms', 'suitability', 'config', 'gcr', 'crop_group', 'specific_yield_kwh_kwp', 'density_mwp_ha', 'relative_crop_yield', 'ler', 'water_saving_pct', 'lcoe_rs_kwh', 'project_irr_pct', 'payback_yr', 'module', 'agro_climatic_region', 'aridity_index', 'growing_period_days', 'dist_to_substation_km', 'line_density_km_per_100km2', 'eligible', 'av_area_ha', 'capacity_mwp', 'generation_gwh', 'investment_rs_crore', 'co2_avoided_kt', 'rules', 'ghi_class', 'rain_ge_600mm', 'farmland_within_5km_substation_pct', 'farmland_median_km_to_substation', 'farmland_slope_lt8_pct', 'farmland_terrain_ok_pct', 'farmland_protected_1km_pct', 'farmland_flood_prone_pct', 'r_value_pct', 'land_kept_by_screens_pct', 'llr_pct', 'cuf_pct', 'performance_ratio', 'rainwater_m3_per_ha', 'projects'];
   const rows = D.map(d => {
     const t = T.get(d.id), e = t.e;
-    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.lu ? 100 * d.lu.c24 : '', d.lu ? 100 * d.lu.cc : '', d.lu ? 100 * (d.lu.c24 - d.lu.c19) : '', t.cropHa, d.ghi, d.t, d.rain, d.ws10, d.ws50, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, e.irr * 100, e.payback, e.mod.short, ACR[d.acr].name, d.ac.ai, d.ac.lgp, d.grid ? d.grid.dsub : '', d.grid ? d.grid.dens : '', t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000]
-      .map(v => typeof v === 'number' ? +v.toFixed(3) : `"${String(v).replace(/"/g, '""')}"`).join(',');
+    return [d.st, d.d, d.kg, koppenOf(d).name, d.area, 100 * ((d.lc && d.lc.crop) || 0), d.lu ? 100 * d.lu.c24 : '', d.lu ? 100 * d.lu.cc : '', d.lu ? 100 * (d.lu.c24 - d.lu.c19) : '', t.cropHa, d.ghi, d.t, d.rain, d.ws10, d.ws50, t.s, e.cfgKey, e.gcr, e.cropKey, e.Y, e.density, e.cropRel, e.ler, e.water * 100, e.lcoe, e.irr * 100, e.payback, e.mod.short, ACR[d.acr].name, d.ac.ai, d.ac.lgp, d.grid ? d.grid.dsub : '', d.grid ? d.grid.dens : '', t.eligible, t.ha, t.mw, t.gwh, t.inv, t.co2 * 1000,
+      S.rules, ghiClass(d), d.rain >= HANDBOOK.rainMin, scr(d, 'sub5'), d.scr ? d.scr.dsub : '', scr(d, 'slope'), scr(d, 'terr'), scr(d, 'prot'), scr(d, 'flood'), scr(d, 'ok'), t.scr * 100, e.llr * 100, e.cuf * 100, e.pr, e.rwh, t.projects]
+      .map(v => typeof v === 'number' ? (isFinite(v) ? +v.toFixed(3) : '') : v == null ? '' : `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
   const blob = new Blob([head.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'india_agrivoltaics_districts.csv'; a.click();
@@ -756,6 +869,12 @@ function buildStatic() {
   }).join('');
   $('#method-body').innerHTML = methodHTML({ CONFIGS, CROPS, MODULES, REF_GCR, GRID_EF });
   $('#sources-body').innerHTML = sourcesHTML();
+  $('#policy-body').innerHTML = policyHTML(policyCtx());
+}
+function policyCtx() {
+  const n = { gis: 0, ok: 0, out: 0 }, w = { ok: 0, irr: 0 };
+  D.forEach(d => { n[ghiClass(d)]++; w[waterClass(d)]++; });
+  return { rules: S.rules, RULES, CROPS, NEGATIVE, POSITIVE, HANDBOOK, ghiCount: n, waterCount: w, meta: SCREEN_META };
 }
 
 
