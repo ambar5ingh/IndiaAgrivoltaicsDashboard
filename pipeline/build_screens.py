@@ -8,11 +8,14 @@ the 5 km substation rule of Section 1.2:
   slope on slopes under 8 degrees                                             (Copernicus DEM GLO-90)
   terr  slope under 8 degrees and, where sloping (>= 2 degrees), facing S/SE/SW
   prot  inside a protected area or within 1 km of one                       (OSM via Overture Maps land_use)
-  flood in or next to land seasonally under water in 1984-2021              (JRC Global Surface Water v1.4)
+  flood flooded more than 0.1 m in a 100-year river or coastal flood        (WRI Aqueduct Floods, historical)
+        or, without the Aqueduct files, in or next to land seasonally under water in 1984-2021 (JRC GSW v1.4)
   ok    passes terrain, protected-area and flood screens together
   ok5   ok and within 5 km of a substation
 
-Usage: python build_screens.py INDIA_DISTRICTS.geojson docs/data cache 2026-10-21.0
+Usage: python build_screens.py INDIA_DISTRICTS.geojson docs/data cache 2026-10-21.0 [RIVER.tif COAST.tif]
+  RIVER.tif  inunriver_historical_000000000WATCH_1980_rp00100.tif   (Aqueduct Floods, from wri.org)
+  COAST.tif  inuncoast_historical_nosub_hist_rp0100_0.tif
 Output: docs/data/screens.json  {district id: {...shares 0-1...}, "_meta": {...}}
 """
 import json, os, sys, math
@@ -36,6 +39,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from districts import load_districts, id_grid, W, S, E, N, RES, NX, NY, TF  # noqa: E402
 
 GEO, OUT, CACHE, REL = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+AQ = sys.argv[5:7] if len(sys.argv) >= 7 else None
+AQ_DEPTH = 0.1  # m
 os.makedirs(CACHE, exist_ok=True)
 g = load_districts(GEO)
 ids, rows, cols, pid = id_grid(g)
@@ -282,8 +287,26 @@ def gsw():
     return np.nan_to_num(acc, nan=0.0)
 
 
-seasonal = cached("gsw_seasonal.npy", gsw)
-floodm = maximum_filter(seasonal >= 0.02, size=3)  # cell or its neighbours at least 2% seasonal water
+def aqueduct(path):
+    """100-year inundation depth (m) on the ~300 m grid; each cell takes the ~1 km Aqueduct value it falls in."""
+    with rasterio.open(path) as src:
+        win = src.window(W, S, E, N).round_offsets().round_lengths()
+        z = src.read(1, window=win)
+        z = np.where((z == src.nodata) | ~np.isfinite(z), 0, z).astype(np.float32)
+        out = np.zeros((NY, NX), dtype=np.float32)
+        reproject(z, out, src_transform=src.window_transform(win), src_crs=src.crs, dst_transform=TF, dst_crs="EPSG:4326",
+                  resampling=Resampling.nearest)
+    return out
+
+
+if AQ:
+    floodm = (aqueduct(AQ[0]) > AQ_DEPTH) | (aqueduct(AQ[1]) > AQ_DEPTH)
+    FLOOD_SRC = f"WRI Aqueduct Floods, historical 100-year riverine and coastal (no subsidence), depth > {AQ_DEPTH} m"
+else:
+    seasonal = cached("gsw_seasonal.npy", gsw)
+    floodm = maximum_filter(seasonal >= 0.02, size=3)  # cell or its neighbours at least 2% seasonal water
+    FLOOD_SRC = "JRC Global Surface Water v1.4 (1984-2021), seasonal water proxy"
+print("flood source:", FLOOD_SRC, flush=True)
 
 # ---------------------------------------------------------------- per-district shares of compact farmland
 okm = terr * (~protm) * (~floodm)
@@ -292,7 +315,7 @@ res = {
     "flood": share(floodm), "ok": share(okm), "ok5": share(okm * near5),
 }
 out = {"_meta": {"overture": REL, "substations": int(len(sub_pt)), "protected": int(len(pg)),
-                 "dem": "Copernicus DEM GLO-90", "water": "JRC Global Surface Water v1.4 (1984-2021)",
+                 "dem": "Copernicus DEM GLO-90", "water": FLOOD_SRC,
                  "land": "GLAD cropland 2024, compact cells"}}
 for d in range(1, nd):
     if cc_d[d] <= 0:

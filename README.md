@@ -30,7 +30,7 @@ A district-level agrivoltaics (agri-PV) screening dashboard for all 791 district
 | Agro-climatic regions | Planning Commission (1989) 15 regions; PET by Hargreaves (1975) |
 | Substations for the 5 km rule (all voltages) and protected areas | © OpenStreetMap contributors, via Overture Maps `base/infrastructure` and `base/land_use` (release 2026-10-21.0) |
 | Slope and aspect | Copernicus DEM GLO-90 (COGs on AWS Open Data) |
-| Flood exposure (proxy) | JRC Global Surface Water v1.4, occurrence 1984–2021 (Pekel et al. 2016) |
+| Flood hazard | [WRI Aqueduct Floods](https://www.wri.org/data/aqueduct-floods-hazard-maps) historical 100-year riverine and coastal maps (depth > 0.1 m); JRC Global Surface Water v1.4 as a fallback |
 | Rules, screens, typologies | MNRE Agri-Photovoltaics Policy Handbook (October 2026); TERI (2025) GIS method |
 
 ## Rebuild the data
@@ -41,10 +41,11 @@ pip install -r pipeline/requirements.txt
 curl -LO https://raw.githubusercontent.com/datta07/INDIAN-SHAPEFILES/master/INDIA/INDIA_DISTRICTS.geojson
 python pipeline/build_data.py INDIA_DISTRICTS.geojson docs/data cache
 python pipeline/build_grid.py 2026-10-21.0 docs/data cache   # Overture release
-python pipeline/build_screens.py INDIA_DISTRICTS.geojson docs/data cache 2026-10-21.0   # handbook site screens
+python pipeline/build_screens.py INDIA_DISTRICTS.geojson docs/data cache 2026-10-21.0 \
+  inunriver_historical_000000000WATCH_1980_rp00100.tif inuncoast_historical_nosub_hist_rp0100_0.tif   # handbook site screens
 ```
 
-The script reads NASA POWER (monthly MERRA-2 and CERES, 2001–2020), ESA WorldCover and the GLAD cropland tiles directly from their public cloud buckets (about 15 minutes; everything is cached). To change the climate period, edit `Y0, Y1` in `build_data.py`. The GLAD tiles are about 900 MB; put copies named `<year>_<tile>.tif` in `cache/glad/` to avoid streaming them. `build_grid.py` reads Overture Maps from S3 and must be rerun whenever the district file changes. `build_screens.py` computes, for each district, the share of compact farmland that passes the handbook's Chapter 2 screens (slope under 8° with south-facing aspect, outside protected areas plus 1 km, outside seasonally flooded land, and within 5 km of a substation) on the same ~300 m grid; it needs about 6 GB of memory and streams the Copernicus DEM and JRC water tiles (about 40 minutes the first time).
+The script reads NASA POWER (monthly MERRA-2 and CERES, 2001–2020), ESA WorldCover and the GLAD cropland tiles directly from their public cloud buckets (about 15 minutes; everything is cached). To change the climate period, edit `Y0, Y1` in `build_data.py`. The GLAD tiles are about 900 MB; put copies named `<year>_<tile>.tif` in `cache/glad/` to avoid streaming them. `build_grid.py` reads Overture Maps from S3 and must be rerun whenever the district file changes. `build_screens.py` computes, for each district, the share of compact farmland that passes the handbook's Chapter 2 screens (slope under 8° with south-facing aspect, outside protected areas plus 1 km, outside seasonally flooded land, and within 5 km of a substation) on the same ~300 m grid; it needs about 6 GB of memory and streams the Copernicus DEM and JRC water tiles (about 40 minutes the first time). Download the two Aqueduct GeoTIFFs from the WRI Aqueduct Floods page; without them the flood screen falls back to JRC seasonal water.
 
 ## Run locally
 

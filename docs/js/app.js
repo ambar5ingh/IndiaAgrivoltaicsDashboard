@@ -148,7 +148,7 @@ const LAYERS = {
   dsubf:  { label: 'Median distance, farmland to substation (km)', unit: 'km', get: d => d.scr && d.scr.dsub != null ? d.scr.dsub : NaN, dec: 1, info: 'sub5', domain: [0, 20] },
   terr:   { label: 'Farmland on slope < 8°, suitable aspect (%)', unit: '%', get: d => scr(d, 'terr'), dec: 0, info: 'slope', domain: [50, 100] },
   prot:   { label: 'Farmland in or within 1 km of protected areas (%)', unit: '%', get: d => scr(d, 'prot'), dec: 1, info: 'prot' },
-  flood:  { label: 'Flood-prone farmland, seasonal water (%)', unit: '%', get: d => scr(d, 'flood'), dec: 0, info: 'flood' },
+  flood:  { label: 'Flood-prone farmland, 100-year flood (%)', unit: '%', get: d => scr(d, 'flood'), dec: 0, info: 'flood' },
   rwh:    { label: 'Rainwater from panels (m³ per ha of array per yr)', unit: 'm³/ha', get: (d, t) => t.e.rwh, dec: 0, info: 'rwh' },
   proj:   { label: 'Scenario projects (2 MW plains, 0.4 MW hills)', unit: 'projects', get: (d, t) => t.projects, dec: 0, info: 'projects', zeroGrey: true },
 };

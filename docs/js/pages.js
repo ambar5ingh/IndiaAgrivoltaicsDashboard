@@ -94,7 +94,7 @@ Row pitch check: pitch ≥ 1.5 × table width and a ≥ 3 m pathway between pane
   <ul>
     <li><b>Terrain:</b> slope from the Copernicus DEM GLO-90 (90 m). Kept: slope under 8°, and where the slope is 2° or more, facing south, south-east or south-west (azimuth 112.5–247.5°).</li>
     <li><b>Protected areas:</b> OpenStreetMap protected areas and national parks from Overture Maps <code>base/land_use</code> (subtype protected, October 2026 release), buffered by 1 km.</li>
-    <li><b>Flood:</b> cells where at least 2% of the land (or of a neighbouring cell) was seasonally under water (water in 1–49% of observations) in the JRC Global Surface Water record, 1984–2021.</li>
+    <li><b>Flood:</b> cells that flood more than 0.1 m in a 100-year river or coastal flood in the WRI Aqueduct Floods historical hazard maps (about 1 km, nearest-neighbour onto the 300 m grid). The pipeline falls back to a seasonal-water proxy from JRC Global Surface Water if the Aqueduct files are not given.</li>
     <li><b>Substation:</b> straight-line distance from each cell to the nearest of about 20,000 substations of any voltage in OpenStreetMap (Overture Maps <code>base/infrastructure</code>). The handbook asks for ≤5 km line-routing distance; straight-line distance is shorter, while missing 33/11 kV substations make it longer.</li>
   </ul>
   <div class="formula">R-value = farmland passing terrain, protected-area and flood screens ÷ compact farmland
@@ -130,7 +130,8 @@ export function sourcesHTML() {
     <tr><td>Agro-climatic regions</td><td>Planning Commission (1989), Agro-Climatic Regional Planning</td><td>15 regions</td></tr>
     <tr><td>Substations (all voltages) and protected areas, for the handbook screens</td><td>OpenStreetMap contributors via Overture Maps base/infrastructure and base/land_use (ODbL)</td><td>Release 2026-10-21</td></tr>
     <tr><td>Terrain (slope, aspect)</td><td>${a('https://registry.opendata.aws/copernicus-dem/', 'Copernicus DEM GLO-90')} (© DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA)</td><td>90 m</td></tr>
-    <tr><td>Seasonally inundated land (flood proxy)</td><td>${a('https://global-surface-water.appspot.com/', 'JRC Global Surface Water')} v1.4; Pekel, J.-F. et al. (2016) <i>Nature</i> 540, 418–422</td><td>30 m, 1984–2021</td></tr>
+    <tr><td>Flood hazard, 100-year return period</td><td>${a('https://www.wri.org/data/aqueduct-floods-hazard-maps', 'WRI Aqueduct Floods')} hazard maps, historical riverine (WATCH 1960–1999) and coastal (no subsidence); Ward, P.J. et al. (2020) WRI technical note</td><td>~1 km</td></tr>
+    <tr><td>Seasonally inundated land (fallback flood proxy)</td><td>${a('https://global-surface-water.appspot.com/', 'JRC Global Surface Water')} v1.4; Pekel, J.-F. et al. (2016) <i>Nature</i> 540, 418–422</td><td>30 m, 1984–2021</td></tr>
     <tr><td>Indian policy rules</td><td>MNRE (2026) <i>Agri-Photovoltaics Policy Handbook for India</i>, V1.0, October 2026, with NISE, ICAR, BIS, IIT Roorkee and the India Agrivoltaics Alliance</td><td>Rules, thresholds, screens</td></tr>
     <tr><td>Land cover (all classes)</td><td>${a('https://esa-worldcover.org/', 'ESA WorldCover 2021 v200')}</td><td>10 m, read at about 300 m</td></tr>
   </tbody></table></div></div>
@@ -160,6 +161,7 @@ export function sourcesHTML() {
     <li>Hargreaves, G.H. (1975). Moisture availability and crop production. <i>Transactions of the ASAE</i> 18, 980–984.</li>
     <li>Marion, B. et al. (2017). A practical irradiance model for bifacial PV modules. <i>IEEE PVSC</i>.</li>
     <li>Dupraz, C. (2024). Assessment of the ground coverage ratio of agrivoltaic systems as a proxy for potential crop productivity. <i>Agroforestry Systems</i> 98, 2679–2696.</li>
+    <li>Ward, P.J. et al. (2020). <i>Aqueduct Floods Methodology</i>. Technical note, World Resources Institute, Washington, DC.</li>
     <li>Pekel, J.-F. et al. (2016). High-resolution mapping of global surface water and its long-term changes. <i>Nature</i> 540, 418–422.</li>
     <li>Fraunhofer ISE (2024). <i>Agrivoltaics: Opportunities for Agriculture and the Energy Transition</i> (guideline).</li>
   </ul></div>
