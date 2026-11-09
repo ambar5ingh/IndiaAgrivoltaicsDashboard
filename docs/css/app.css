@@ -423,3 +423,28 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
   .site-grid { grid-template-columns: 1fr; }
   .site-specs td:first-child { width: 38%; }
 }
+
+/* mandi and cold storage layers */
+.mk-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(19,50,44,.25); box-sizing: border-box; flex: none; }
+.mk-popup .leaflet-popup-content { margin: 10px 12px; font-family: var(--font); width: 300px !important; }
+.mk-pop h4 { margin: 2px 0 2px; font-size: .95rem; color: var(--navy); line-height: 1.25; }
+.mk-kind { font-size: .64rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.mk-sub { color: var(--muted); font-size: .76rem; }
+.mk-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.mk-tag { font-size: .66rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: #fde8e1; color: #9a3412; }
+.mk-tag.enam { background: #e6f4ee; color: var(--dark-green); }
+.mk-h { margin-top: 9px; font-size: .72rem; font-weight: 700; color: var(--navy); }
+.mk-h small { font-weight: 500; color: var(--muted); }
+.mk-scroll { max-height: 180px; overflow-y: auto; margin-top: 3px; border: 1px solid var(--border); border-radius: 6px; }
+.mk-prices { width: 100%; border-collapse: collapse; font-size: .72rem; table-layout: fixed; }
+.mk-prices td:first-child { width: 50%; overflow-wrap: anywhere; }
+.mk-prices td:nth-child(2) { width: 28%; color: var(--muted); }
+.mk-prices td { padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.mk-prices tr:last-child td { border-bottom: 0; }
+.mk-prices td:nth-child(2), .mk-prices td:nth-child(3) { text-align: right; white-space: nowrap; }
+.mk-prices small { color: var(--muted); }
+.mk-comm { font-size: .72rem; margin-top: 3px; display: grid; gap: 2px; }
+.mk-comm span { font-weight: 700; color: var(--dark-green); }
+.mk-addr { font-size: .72rem; margin-top: 2px; }
+.mk-note { margin-top: 8px; font-size: .68rem; color: var(--muted); line-height: 1.35; }
+.mk-note.warn { color: var(--red); }
