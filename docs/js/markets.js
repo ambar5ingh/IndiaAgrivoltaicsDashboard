@@ -45,7 +45,6 @@ function coldPopup(x) {
   return `<div class="mk-pop"><div class="mk-kind" style="color:${COLD_COLOR}">Cold storage</div><h4>${esc(x.n)}</h4>
     <div class="mk-sub">${esc(x.d)}, ${esc(x.st)}</div>
     ${x.in ? `<div class="mk-note">The point falls in ${esc(x.in)} on this map (renamed or split district, or a point near the boundary).</div>` : ''}
-    ${x.f ? `<div class="mk-note warn">The point is more than 25 km outside the state NHB lists for it, so the coordinates may be wrong.</div>` : ''}
     <div class="mk-note">Source: National Horticulture Board cold chain map (ICAP), NHB-assisted units only.${x.r ? ' Coordinates are given to 0.01° (about 1 km).' : ''} Capacity is not in the map feed.</div></div>`;
 }
 
@@ -58,7 +57,7 @@ async function build(kind) {
   for (const x of list) {
     const opt = kind === 'mandi'
       ? { radius: radius() + 0.8, color: '#fff', weight: 1, fillColor: x.agm ? MANDI_COLOR : '#fff', fillOpacity: 1, renderer }
-      : { radius: radius(), color: '#fff', weight: 0.8, fillColor: x.f ? '#9aa5b1' : COLD_COLOR, fillOpacity: 0.95, renderer };
+      : { radius: radius(), color: '#fff', weight: 0.8, fillColor: COLD_COLOR, fillOpacity: 0.95, renderer };
     if (kind === 'mandi' && !x.agm) { opt.color = MANDI_COLOR; opt.weight = 1.6; }
     L.circleMarker([x.lat, x.lon], opt)
       .bindTooltip(esc(x.n.trim()), { direction: 'top', offset: [0, -4] })
@@ -92,8 +91,7 @@ export function marketsLegend() {
   if (L_.cold && map.hasLayer(L_.cold)) {
     const c = DATA.cold.meta;
     h += `<div class="t" style="margin-top:8px">Cold storages (NHB) <button class="info" data-info="cold">i</button></div>
-      <div class="cat-legend"><div><span class="mk-dot" style="background:${COLD_COLOR}"></span>${c.n.toLocaleString('en-IN')} NHB-assisted units</div>
-      <div><span class="mk-dot" style="background:#9aa5b1"></span>Location doubtful (${c.check})</div></div>`;
+      <div class="cat-legend"><div><span class="mk-dot" style="background:${COLD_COLOR}"></span>${c.n.toLocaleString('en-IN')} NHB-assisted units</div></div>`;
   }
   return h;
 }
