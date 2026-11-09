@@ -4,6 +4,7 @@ import { acrOf, agroClimate } from './agroclimate.js';
 import { initShadowPage, renderShadowPage, shadowSummaryHTML } from './shadowpage.js';
 import { methodHTML, sourcesHTML, policyHTML } from './pages.js';
 import { initSites, toggleSites, sitesLegend } from './sites.js';
+import { initMarkets, toggleMarket, marketsLegend } from './markets.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -64,6 +65,7 @@ async function init() {
   buildControls();
   buildMap();
   initSites(map, renderLegend).then(renderLegend);
+  initMarkets(map, renderLegend);
   buildStatic();
   initShadowPage(shadowCtx());
   recompute();
@@ -256,6 +258,8 @@ function buildControls() {
   $('#btn-grid').onclick = togglePowerGrid;
   $('#btn-graticule').onclick = toggleGraticule;
   $('#btn-sites').onclick = () => { $('#btn-sites').textContent = 'Agri-PV sites: ' + (toggleSites() ? 'on' : 'off'); };
+  $('#btn-mandis').onclick = async () => { $('#btn-mandis').textContent = 'Mandis: ' + (await toggleMarket('mandi') ? 'on' : 'off'); };
+  $('#btn-cold').onclick = async () => { $('#btn-cold').textContent = 'Cold storage: ' + (await toggleMarket('cold') ? 'on' : 'off'); };
   $('#legend').addEventListener('click', e => { const b = e.target.closest('[data-kv]'); if (b) toggleGridBand(b.dataset.kv); });
   $('#btn-share').onclick = async () => {
     const u = shareURL();
@@ -416,13 +420,13 @@ function renderLegend() {
     D.filter(inScope).forEach(d => { const k = Ly.key(d); present[k] = (present[k] || 0) + 1; });
     const keys = Ly.keys().filter(k => present[k]);
     el.innerHTML = `<div class="t">${esc(Ly.label)}${info}</div><div class="cat-legend">` +
-      keys.map(k => `<div><span class="sw" style="background:${Ly.colorOfKey(k)}"></span>${esc(Ly.name(k))} <span style="color:var(--muted)">(${present[k]})</span></div>`).join('') + '</div>' + overlayLegend() + sitesLegend();
+      keys.map(k => `<div><span class="sw" style="background:${Ly.colorOfKey(k)}"></span>${esc(Ly.name(k))} <span style="color:var(--muted)">(${present[k]})</span></div>`).join('') + '</div>' + overlayLegend() + sitesLegend() + marketsLegend();
     return;
   }
   const grad = `linear-gradient(90deg, ${(Ly.diverging ? DIV : RAMP).join(',')})`;
   el.innerHTML = `<div class="t">${esc(Ly.label)}${info}</div><div class="ramp" style="background:${grad}"></div>
     <div class="ramp-labels"><span>${fmt(domain[0], Ly.dec)}</span><span>${fmt((domain[0] + domain[1]) / 2, Ly.dec)}</span><span>${fmt(domain[1], Ly.dec)}</span></div>` +
-    (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '') + overlayLegend() + sitesLegend();
+    (Ly.zeroGrey ? `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;color:var(--muted)"><span class="sw" style="background:#e8e4d8"></span>Below threshold / no capacity</div>` : '') + overlayLegend() + sitesLegend() + marketsLegend();
 }
 function scopeTotals() {
   let mw = 0, gwh = 0, ha = 0, inv = 0, co2 = 0, ler = 0, n = 0, all = 0, cropHa = 0, irrW = 0, proj = 0, gisHa = 0, excl = 0;
