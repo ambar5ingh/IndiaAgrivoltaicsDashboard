@@ -37,6 +37,12 @@ def main():
     key = os.environ.get("DATA_GOV_IN_KEY", "").strip()
     if not key:
         sys.exit("DATA_GOV_IN_KEY is not set")
+    try:  # one tiny request first, so a blocked connection and a slow API can be told apart in the log
+        urllib.request.urlopen(urllib.request.Request(f"{URL}?{urllib.parse.urlencode({'api-key': key, 'format': 'json', 'limit': 1})}",
+                                                      headers={"User-Agent": "agripv-dashboard"}), timeout=60).read()
+        print("data.gov.in API reachable")
+    except Exception as e:
+        sys.exit(f"cannot reach api.data.gov.in even for 1 record ({e}). It may be refusing connections from outside India.")
     rows, offset, total = [], 0, None
     while True:
         d = get(offset, key)
