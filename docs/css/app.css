@@ -48,13 +48,18 @@ a { color: var(--navy); }
 /* ---------------------------------------------------------------- loading */
 .loading {
   position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 22px;
-  background: var(--dark-green); color: var(--cream);
+  background: #fef5e4; color: var(--dark-green); padding: 24px 16px;
 }
-.loading .brand-mark { width: 64px; height: 64px; }
+.loading-art {
+  width: min(1080px, 94vw); height: auto; display: block;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
+}
+.loading .brand-mark { width: 56px; height: 56px; }
 .loading-title { font-weight: 800; font-size: 1.4rem; letter-spacing: -0.01em; }
-.load-track { width: 260px; height: 6px; background: rgba(245,232,201,0.12); border-radius: 4px; overflow: hidden; }
+.load-track { width: 260px; height: 6px; background: rgba(19,50,44,0.12); border-radius: 4px; overflow: hidden; }
 #load-bar { height: 100%; width: 10%; background: linear-gradient(90deg, var(--mint), var(--amber)); transition: width .3s; }
-#load-text { color: rgba(245,232,201,0.7); font-size: .86rem; }
+#load-text { color: rgba(19,50,44,0.7); font-size: .86rem; }
 
 /* ---------------------------------------------------------------- header */
 .site-header {
