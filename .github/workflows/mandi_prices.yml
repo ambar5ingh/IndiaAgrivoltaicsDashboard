@@ -4,10 +4,12 @@
 # listens for this workflow finishing instead.
 name: Update mandi prices
 
+# Schedule paused 2026-11-10: api.data.gov.in refuses connections from GitHub's runners
+# (Connection refused / timeouts), so the download has to run from a machine in India.
 on:
-  schedule:
-    - cron: "30 13 * * *"   # 19:00 IST, after most mandis have reported
-    - cron: "30 4 * * *"    # 10:00 IST, catches late uploads of the previous day
+  # schedule:
+  #   - cron: "30 13 * * *"   # 19:00 IST, after most mandis have reported
+  #   - cron: "30 4 * * *"    # 10:00 IST, catches late uploads of the previous day
   workflow_dispatch:
 
 permissions:
