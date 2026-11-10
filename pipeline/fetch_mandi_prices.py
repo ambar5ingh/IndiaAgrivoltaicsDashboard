@@ -4,6 +4,8 @@ Usage: DATA_GOV_IN_KEY=<key> python fetch_mandi_prices.py
 Writes pipeline/sources/markets/agmarknet_prices_<arrival date>.csv.gz in the same columns as the
 data.gov.in CSV download, then build_markets.py picks it up.
 
+api.data.gov.in refuses connections from outside India (GitHub's runners included), so run this
+from a computer in India, or download the CSV from the data.gov.in page and drop it into sources.
 The resource ("Current Daily Price of Various Commodities from Various Markets (Mandi)",
 9ef84268-d588-465a-a308-a864a43d0070) only holds the latest day, so history builds up only if this
 runs every day. Get a key from data.gov.in -> My Account; the sample key on the API page returns 10 rows.

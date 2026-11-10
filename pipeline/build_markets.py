@@ -5,7 +5,7 @@ Inputs in pipeline/sources/markets/:
   agmarknet_prices_*.csv[.gz] data.gov.in "Current Daily Price of Various Commodities from Various Markets
                              (Mandi)" (Agmarknet), one file per download day; more days = more mandis.
                              Each mandi shows its latest day, plus the change from its previous report.
-                             fetch_mandi_prices.py downloads each day (run daily by .github/workflows/mandi_prices.yml)
+                             fetch_mandi_prices.py can download a day, but only from a machine in India
   enam_directory_*.txt       text of the SFAC "e-NAM Directory" PDF (1,000 eNAM mandis, July 2021)
   nhb_icap_gis.csv           the point feed behind NHB's "Cold Storage Map of India"
                              (https://nhb.gov.in/Handlers/GeoIndiaHandlerGis.ashx), saved from a browser
