@@ -3,7 +3,8 @@
 Usage: python build_markets.py <docs dir>
 Inputs in pipeline/sources/markets/:
   agmarknet_prices_*.csv     data.gov.in "Current Daily Price of Various Commodities from Various Markets
-                             (Mandi)" (Agmarknet), one file per download day; more days = more mandis
+                             (Mandi)" (Agmarknet), one file per download day; more days = more mandis.
+                             Each mandi shows its latest day, plus the change from its previous report
   enam_directory_*.txt       text of the SFAC "e-NAM Directory" PDF (1,000 eNAM mandis, July 2021)
   nhb_icap_gis.csv           the point feed behind NHB's "Cold Storage Map of India"
                              (https://nhb.gov.in/Handlers/GeoIndiaHandlerGis.ashx), saved from a browser
@@ -201,10 +202,16 @@ frames = [pd.read_csv(f) for f in sorted(glob.glob(os.path.join(SRC, "agmarknet_
 pr = pd.concat(frames, ignore_index=True)
 pr.columns = [c.replace("_x0020_", "_") for c in pr.columns]
 pr["date"] = pd.to_datetime(pr.Arrival_Date, dayfirst=True)
-pr = pr.sort_values("date").drop_duplicates(["State", "District", "Market", "Commodity", "Variety", "Grade"], keep="last")
-agm = {}
+pr = pr.sort_values("date").drop_duplicates(["State", "District", "Market", "Commodity", "Variety", "Grade", "date"], keep="last")
+LOT = ["Commodity", "Variety", "Grade"]
+agm, prevp = {}, {}
 for (s, d, m), grp in pr.groupby(["State", "District", "Market"]):
-    agm[(s, d, m)] = grp
+    last = grp.date.max()
+    agm[(s, d, m)] = grp[grp.date == last]  # a mandi shows only its latest reporting day
+    older = grp[grp.date < last]
+    if len(older):  # modal price at the mandi's previous report, for the day-on-day change
+        o = older[older.date == older.date.max()]
+        prevp[(s, d, m)] = (older.date.max(), {tuple(r[:3]): int(r[3]) for r in o[LOT + ["Modal_Price"]].itertuples(index=False)})
 print("Agmarknet:", len(agm), "markets reporting on", pr.date.dt.date.nunique(), "day(s)")
 
 # ------------------------------------------------------------------ eNAM directory
@@ -304,10 +311,16 @@ for (s, d, m), grp in agm.items():
     if "lat" not in loc:
         fails["agm"] += 1
         continue
-    prices = [[r.Commodity, r.Variety if r.Variety != r.Commodity else "", int(r.Min_Price), int(r.Max_Price), int(r.Modal_Price)]
-              for r in grp.sort_values("Commodity").itertuples()]
+    pdate, pmod = prevp.get((s, d, m), (None, {}))
+    prices = []
+    for r in grp.sort_values("Commodity").itertuples():
+        row = [r.Commodity, r.Variety if r.Variety != r.Commodity else "", int(r.Min_Price), int(r.Max_Price), int(r.Modal_Price)]
+        if (r.Commodity, r.Variety, r.Grade) in pmod:
+            row.append(pmod[(r.Commodity, r.Variety, r.Grade)])  # 6th field: previous modal price
+        prices.append(row)
     mandis.append(dict(n=m, st=loc["state"], d=loc.get("district") or d, lat=round(loc["lat"], 5), lon=round(loc["lon"], 5), p=loc["prec"],
-                       at=str(loc["matched"]), agm=1, date=grp.date.max().strftime("%Y-%m-%d"), prices=prices, note=loc.get("note")))
+                       at=str(loc["matched"]), agm=1, date=grp.date.max().strftime("%Y-%m-%d"), prices=prices, note=loc.get("note"),
+                       pdate=pdate.strftime("%Y-%m-%d") if pdate is not None and any(len(x) == 6 for x in prices) else None))
 for e in enam:
     st = state_of(e["state"])
     loc = locate(st, e["district"], e["market"])
@@ -333,8 +346,9 @@ for x in mandis:
     for k in [k for k, v in x.items() if v is None or (isinstance(v, (str, dict, list)) and not v) or (isinstance(v, float) and v != v)]:
         del x[k]
 meta = dict(
-    agm_markets=len(agm), agm_days=sorted({d.strftime("%Y-%m-%d") for d in pr.date}), enam_parsed=len(enam), unplaced=fails,
-    placed=len(mandis), on_enam=sum(1 for x in mandis if x.get("enam")), with_prices=sum(1 for x in mandis if x.get("agm")),
+    agm_markets=len(agm), agm_days=sorted({d.strftime("%Y-%m-%d") for d in pr.date}),
+    agm_latest=sum(1 for g_ in agm.values() if g_.date.max() == pr.date.max()), enam_parsed=len(enam), unplaced=fails,
+    placed=len(mandis), placed_latest=sum(1 for x in mandis if x.get("date") == pr.date.max().strftime("%Y-%m-%d")), on_enam=sum(1 for x in mandis if x.get("enam")), with_prices=sum(1 for x in mandis if x.get("agm")),
     prec={p: sum(1 for x in mandis if x["p"] == p) for p in ("market", "town", "village")},
     source="Agmarknet daily prices via data.gov.in (OGD licence); SFAC e-NAM Directory (July 2021); "
            "positions from OpenStreetMap place names via Overture Maps (ODbL)")

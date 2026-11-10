@@ -4,6 +4,14 @@
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const inr = v => '₹' + Number(v).toLocaleString('en-IN');
+const day = d => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+const latestDay = () => DATA.mandi.meta.agm_days.at(-1);
+function change(mo, pm) {  // modal price vs the mandi's previous report
+  if (pm == null || !pm) return '';
+  const pct = (mo - pm) / pm * 100, r = Math.round(pct);
+  if (Math.abs(pct) < 0.5) return `<small class="mk-chg">no change</small>`;
+  return `<small class="mk-chg ${pct > 0 ? 'up' : 'dn'}" title="was ${inr(pm)}">${pct > 0 ? '▲' : '▼'} ${Math.abs(r) || '<1'}%</small>`;
+}
 export const MANDI_COLOR = '#e4572e', COLD_COLOR = '#2b8cbe';
 
 let map, renderer, onChange = () => {};
@@ -22,12 +30,13 @@ function mandiPopup(x) {
   let h = `<div class="mk-pop"><div class="mk-kind" style="color:${MANDI_COLOR}">Mandi</div><h4>${esc(x.n.trim())}</h4>
     <div class="mk-sub">${esc(x.d ? x.d + ', ' : '')}${esc(x.st)}</div><div class="mk-tags">${tags}</div>`;
   if (x.prices && x.prices.length) {
-    h += `<div class="mk-h">Prices on ${esc(new Date(x.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))} <small>(₹ per quintal: range, modal)</small></div>
+    const old = x.date !== latestDay() ? ` <small class="mk-old">latest this mandi reported</small>` : '';
+    h += `<div class="mk-h">Prices on ${esc(day(x.date))}${old} <small>(₹ per quintal: range, modal${x.pdate ? `; change from ${esc(day(x.pdate))}` : ''})</small></div>
       <div class="mk-scroll"><table class="mk-prices"><tbody>` +
-      x.prices.map(([c, v, lo, hi, mo]) => {
+      x.prices.map(([c, v, lo, hi, mo, pm]) => {
         const vv = v && v.toLowerCase().replace(/\W/g, '') !== c.toLowerCase().replace(/\W/g, '') && v.toLowerCase() !== 'other' ? ` <small>${esc(v)}</small>` : '';
         const n = k => Number(k).toLocaleString('en-IN');
-        return `<tr><td>${esc(c)}${vv}</td><td>${lo === hi ? '' : n(lo) + '–' + n(hi)}</td><td><b>${inr(mo)}</b></td></tr>`;
+        return `<tr><td>${esc(c)}${vv}</td><td>${lo === hi ? '' : n(lo) + '–' + n(hi)}</td><td><b>${inr(mo)}</b>${change(mo, pm)}</td></tr>`;
       }).join('') +
       `</tbody></table></div>`;
   }
@@ -56,7 +65,7 @@ async function build(kind) {
   const list = kind === 'mandi' ? DATA.mandi.mandis : DATA.cold.sites;
   for (const x of list) {
     const opt = kind === 'mandi'
-      ? { radius: radius() + 0.8, color: '#fff', weight: 1, fillColor: x.agm ? MANDI_COLOR : '#fff', fillOpacity: 1, renderer }
+      ? { radius: radius() + 0.8, color: '#fff', weight: 1, fillColor: x.agm ? MANDI_COLOR : '#fff', fillOpacity: x.agm && x.date !== latestDay() ? 0.45 : 1, renderer }
       : { radius: radius(), color: '#fff', weight: 0.8, fillColor: COLD_COLOR, fillOpacity: 0.95, renderer };
     if (kind === 'mandi' && !x.agm) { opt.color = MANDI_COLOR; opt.weight = 1.6; }
     L.circleMarker([x.lat, x.lon], opt)
@@ -84,7 +93,8 @@ export function marketsLegend() {
   if (L_.mandi && map.hasLayer(L_.mandi)) {
     const m = DATA.mandi.meta;
     h += `<div class="t" style="margin-top:8px">Mandis <button class="info" data-info="mandis">i</button></div>
-      <div class="cat-legend"><div><span class="mk-dot" style="background:${MANDI_COLOR}"></span>With Agmarknet prices (${m.with_prices.toLocaleString('en-IN')})</div>
+      <div class="cat-legend"><div><span class="mk-dot" style="background:${MANDI_COLOR}"></span>Prices on ${esc(day(latestDay()))} (${m.placed_latest.toLocaleString('en-IN')})</div>
+      ${m.with_prices > m.placed_latest ? `<div><span class="mk-dot" style="background:${MANDI_COLOR};opacity:.45"></span>Earlier prices only (${(m.with_prices - m.placed_latest).toLocaleString('en-IN')})</div>` : ''}
       <div><span class="mk-dot" style="background:#fff;border:2px solid ${MANDI_COLOR}"></span>e-NAM directory only (${(m.placed - m.with_prices).toLocaleString('en-IN')})</div></div>
       <div class="kv-note">${m.placed.toLocaleString('en-IN')} mandis placed by town name. Click one for prices and what it trades.</div>`;
   }

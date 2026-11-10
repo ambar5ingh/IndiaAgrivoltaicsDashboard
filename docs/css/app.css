@@ -448,6 +448,10 @@ input[type=range] { width: 100%; accent-color: var(--dark-green); margin: 0; }
 .mk-prices tr:last-child td { border-bottom: 0; }
 .mk-prices td:nth-child(2), .mk-prices td:nth-child(3) { text-align: right; white-space: nowrap; }
 .mk-prices small { color: var(--muted); }
+.mk-chg { display: block; font-size: .64rem; }
+.mk-prices .mk-chg.up { color: #15803d; }
+.mk-prices .mk-chg.dn { color: #b91c1c; }
+.mk-old { font-weight: 600; color: #9a3412 !important; }
 .mk-comm { font-size: .72rem; margin-top: 3px; display: grid; gap: 2px; }
 .mk-comm span { font-weight: 700; color: var(--dark-green); }
 .mk-addr { font-size: .72rem; margin-top: 2px; }
