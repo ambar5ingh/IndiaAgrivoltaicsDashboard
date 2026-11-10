@@ -2,9 +2,10 @@
 
 Usage: python build_markets.py <docs dir>
 Inputs in pipeline/sources/markets/:
-  agmarknet_prices_*.csv     data.gov.in "Current Daily Price of Various Commodities from Various Markets
+  agmarknet_prices_*.csv[.gz] data.gov.in "Current Daily Price of Various Commodities from Various Markets
                              (Mandi)" (Agmarknet), one file per download day; more days = more mandis.
-                             Each mandi shows its latest day, plus the change from its previous report
+                             Each mandi shows its latest day, plus the change from its previous report.
+                             fetch_mandi_prices.py downloads each day (run daily by .github/workflows/mandi_prices.yml)
   enam_directory_*.txt       text of the SFAC "e-NAM Directory" PDF (1,000 eNAM mandis, July 2021)
   nhb_icap_gis.csv           the point feed behind NHB's "Cold Storage Map of India"
                              (https://nhb.gov.in/Handlers/GeoIndiaHandlerGis.ashx), saved from a browser
@@ -198,10 +199,16 @@ def locate(st, dname, mname):
 
 
 # ------------------------------------------------------------------ Agmarknet daily prices
-frames = [pd.read_csv(f) for f in sorted(glob.glob(os.path.join(SRC, "agmarknet_prices_*.csv")))]
+KEEP_DAYS = 30  # mandis whose last report is older than this drop off the price layer
+frames = [pd.read_csv(f) for f in sorted(glob.glob(os.path.join(SRC, "agmarknet_prices_*.csv*")))]
 pr = pd.concat(frames, ignore_index=True)
 pr.columns = [c.replace("_x0020_", "_") for c in pr.columns]
 pr["date"] = pd.to_datetime(pr.Arrival_Date, dayfirst=True)
+for c in ("Min_Price", "Max_Price", "Modal_Price"):
+    pr[c] = pd.to_numeric(pr[c], errors="coerce")
+pr = pr.dropna(subset=["Min_Price", "Max_Price", "Modal_Price", "Market", "Commodity"])
+pr = pr[pr.date > pr.date.max() - pd.Timedelta(days=KEEP_DAYS)]
+pr[["Variety", "Grade"]] = pr[["Variety", "Grade"]].fillna("")
 pr = pr.sort_values("date").drop_duplicates(["State", "District", "Market", "Commodity", "Variety", "Grade", "date"], keep="last")
 LOT = ["Commodity", "Variety", "Grade"]
 agm, prevp = {}, {}

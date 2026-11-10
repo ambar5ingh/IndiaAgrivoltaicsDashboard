@@ -1,0 +1,60 @@
+# Downloads the day's Agmarknet mandi prices from data.gov.in and rebuilds docs/data/mandis.json.
+# Needs the repository secret DATA_GOV_IN_KEY (your own key from data.gov.in -> My Account).
+# The commit it pushes does not start other workflows, so "Deploy dashboard to GitHub Pages"
+# listens for this workflow finishing instead.
+name: Update mandi prices
+
+on:
+  schedule:
+    - cron: "30 13 * * *"   # 19:00 IST, after most mandis have reported
+    - cron: "30 4 * * *"    # 10:00 IST, catches late uploads of the previous day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mandi-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download today's prices
+        id: fetch
+        env:
+          DATA_GOV_IN_KEY: ${{ secrets.DATA_GOV_IN_KEY }}
+        run: |
+          set +e
+          python pipeline/fetch_mandi_prices.py
+          code=$?
+          if [ $code -eq 3 ]; then echo "new=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "new=true" >> "$GITHUB_OUTPUT"
+          exit $code
+      - name: Cache OpenStreetMap place names (Overture)
+        if: steps.fetch.outputs.new == 'true'
+        uses: actions/cache@v4
+        with:
+          path: pipeline/.cache
+          key: overture-2026-10-21.0
+      - name: Rebuild mandi layer
+        if: steps.fetch.outputs.new == 'true'
+        run: |
+          pip install -q $(grep -E '^(geopandas|numpy|pandas|pyogrio|s3fs|shapely|pyarrow|rapidfuzz)==' pipeline/requirements.txt)
+          python pipeline/build_markets.py docs
+      - name: Commit
+        if: steps.fetch.outputs.new == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pipeline/sources/markets docs/data/mandis.json docs/data/cold_storage.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Update mandi prices ($(ls pipeline/sources/markets/agmarknet_prices_* | sort | tail -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}'))"
+          git pull --rebase origin main
+          git push origin HEAD:main
